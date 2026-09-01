@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="96" fill="#f2d600"/>
+  <g transform="translate(256 262)">
+    <!-- carta de baralho -->
+    <rect x="-118" y="-150" width="236" height="300" rx="26" fill="#ffffff" stroke="#1c1c1c" stroke-width="12"/>
+    <!-- naipe (espadas) -->
+    <path d="M0 -86 C 54 -30, 92 -6, 92 44 C 92 82, 62 104, 30 104 C 16 104, 6 98, 0 88 C -6 98, -16 104, -30 104 C -62 104, -92 82, -92 44 C -92 -6, -54 -30, 0 -86 Z" fill="#1c1c1c"/>
+    <rect x="-12" y="70" width="24" height="52" rx="4" fill="#1c1c1c"/>
+  </g>
+  <!-- pontinho -->
+  <circle cx="256" cy="420" r="20" fill="#34a853"/>
+</svg>
