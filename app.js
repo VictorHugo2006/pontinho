@@ -228,7 +228,8 @@ function recompute(p) {
 
   const activeIds = () => players.filter(pl => st.ativo[pl.id]).map(pl => pl.id);
   const maxAtivosExcl = (excl) => {
-    const v = activeIds().filter(id => id !== excl).map(id => st.pontos[id]);
+    // Volta com a pontuação do maior jogador que AINDA está na partida (abaixo do limite)
+    const v = activeIds().filter(id => id !== excl && st.pontos[id] < p.limite).map(id => st.pontos[id]);
     return v.length ? Math.max(...v) : 0;
   };
 
@@ -364,7 +365,27 @@ function eliminar(p, playerId) {
   persist(p);
 }
 
-function finalizar(p, vencedorId) { pushEvent(p, { type: 'finalizar', vencedorId }); }
+function finalizar(p, vencedorId) {
+  // O vencedor "bate" a última mão: leva a batida de cada jogador ativo; depois encerra.
+  if (vencedorId && activePlayers(p).length > 1) {
+    p.events.push({ type: 'round', batedorId: vencedorId, foraIds: [], pontos: {} });
+  }
+  p.events.push({ type: 'finalizar', vencedorId });
+  recompute(p);
+  persist(p);
+}
+
+// Jogadores já resolvidos (volta/cai fora) DESDE a última rodada — não podem repetir na mesma rodada
+function resolvedThisRound(p) {
+  let lastRound = -1;
+  (p.events || []).forEach((e, i) => { if (e.type === 'round') lastRound = i; });
+  const s = new Set();
+  for (let i = lastRound + 1; i < p.events.length; i++) {
+    const e = p.events[i];
+    if (e.type === 'volta' || e.type === 'eliminar') s.add(e.playerId);
+  }
+  return s;
+}
 
 /* ========================= Online (Firebase) ============================= */
 let fbAuth = null, fbDB = null, fbReady = null;
@@ -468,6 +489,7 @@ function render() {
     t.classList.toggle('active', t.dataset.screen === currentScreen && currentScreen !== 'viewer'));
   if (currentScreen === 'viewer') return renderViewer();
   if (currentScreen === 'history') return renderHistory();
+  if (currentScreen === 'dinheiro') return renderDinheiro();
   if (currentScreen === 'players') return renderJogadores();
   const p = currentPartida();
   if (!p) return renderSetup();
@@ -511,7 +533,8 @@ function renderViewer() {
     </div>`));
   root.appendChild(buildBoard(p, false));
 
-  const risco = p.players.filter(pl => p.st.ativo[pl.id] && p.st.pontos[pl.id] >= p.limite);
+  const resolvidoV = resolvedThisRound(p);
+  const risco = p.players.filter(pl => p.st.ativo[pl.id] && p.st.pontos[pl.id] >= p.limite && !resolvidoV.has(pl.id));
   if (risco.length) {
     const box = el(`<div class="card"><h2>⚠️ Passaram de ${p.limite} pontos</h2></div>`);
     risco.forEach(pl => box.appendChild(el(`<div style="margin-bottom:4px"><b>${pl.nome}</b> — ${p.st.pontos[pl.id]} pts</div>`)));
@@ -772,8 +795,9 @@ function renderGame(p) {
     root.appendChild(banner);
   }
 
-  // Aviso: passaram de 100 (volta / cai fora)
-  const risco = p.players.filter(pl => p.st.ativo[pl.id] && p.st.pontos[pl.id] >= p.limite);
+  // Aviso: passaram de 100 (volta / cai fora). Quem já resolveu nesta rodada some daqui.
+  const resolvido = resolvedThisRound(p);
+  const risco = p.players.filter(pl => p.st.ativo[pl.id] && p.st.pontos[pl.id] >= p.limite && !resolvido.has(pl.id));
   if (risco.length) {
     const box = el(`<div class="card"><h2>⚠️ Passaram de ${p.limite} pontos</h2></div>`);
     risco.forEach(pl => {
@@ -955,13 +979,19 @@ function openAddPlayerModal(p) {
 
 /* --------------------------- Modal de pulga ------------------------------ */
 function openPulgaModal(p) {
+  // Só uma pulga por rodada
+  if (p.pendingPulgas.length) {
+    const nome = p.players.find(x => x.id === p.pendingPulgas[0]).nome;
+    toast(`Já há pulga de ${nome} nesta rodada. Use ↺ Desfazer para trocar.`);
+    return;
+  }
   const ativos = activePlayers(p);
-  const sel = new Set();
+  let selId = null;
   const body = el(`
     <div class="modal">
       <div class="row"><h2>🐛 Registrar pulga</h2><div class="spacer"></div>
         <button class="btn ghost sm close">Fechar</button></div>
-      <p class="muted">Quem mostrou a pulguinha? Recebe ${money(p.valorBatida)} de cada jogador ativo. Entra na próxima rodada.</p>
+      <p class="muted">Quem mostrou a pulguinha? (só uma por rodada) Recebe ${money(p.valorBatida)} de cada jogador ativo. Entra na próxima rodada.</p>
       <div class="round-players"></div>
       <div style="height:14px"></div>
       <button class="btn green full" id="save-pulga">Registrar</button>
@@ -970,14 +1000,16 @@ function openPulgaModal(p) {
   ativos.forEach(pl => {
     const b = el(`<button class="rp-toggle pulga" style="text-align:left">${pl.nome}</button>`);
     b.addEventListener('click', () => {
-      if (sel.has(pl.id)) { sel.delete(pl.id); b.classList.remove('on'); }
-      else { sel.add(pl.id); b.classList.add('on'); }
+      // seleção única
+      selId = (selId === pl.id) ? null : pl.id;
+      listEl.querySelectorAll('.rp-toggle').forEach(x => x.classList.remove('on'));
+      if (selId) b.classList.add('on');
     });
     listEl.appendChild(b);
   });
   body.querySelector('#save-pulga').addEventListener('click', () => {
-    if (!sel.size) { toast('Selecione quem pegou a pulga'); return; }
-    registrarPulga(p, [...sel]);
+    if (!selId) { toast('Selecione quem pegou a pulga'); return; }
+    registrarPulga(p, [selId]);
     closeModal(); render();
     toast('Pulga registrada!');
   });
@@ -1162,6 +1194,85 @@ function openFinishModal(p) {
   });
   body.querySelector('.close').addEventListener('click', closeModal);
   showModal(body);
+}
+
+/* ------------------------------ Dinheiro --------------------------------- */
+let dinheiroPeriodo = 'mes'; // dia | semana | mes | ano | tudo
+function inPeriodo(dataISO, periodo) {
+  const hoje = todayISO();
+  if (periodo === 'tudo') return true;
+  if (periodo === 'dia') return dataISO === hoje;
+  if (periodo === 'mes') return dataISO.slice(0, 7) === hoje.slice(0, 7);
+  if (periodo === 'ano') return dataISO.slice(0, 4) === hoje.slice(0, 4);
+  if (periodo === 'semana') {
+    const diff = (new Date(hoje + 'T00:00:00') - new Date(dataISO + 'T00:00:00')) / 86400000;
+    return diff >= 0 && diff < 7;
+  }
+  return true;
+}
+
+function renderDinheiro() {
+  const root = appRoot();
+  root.innerHTML = '';
+  const ob = document.querySelector('.fab-bar'); if (ob) ob.remove();
+
+  const periodos = [['dia', 'Hoje'], ['semana', 'Semana'], ['mes', 'Mês'], ['ano', 'Ano'], ['tudo', 'Tudo']];
+  const sel = el(`<div class="chips" style="margin-bottom:12px">
+    ${periodos.map(([k, l]) => `<button class="chip ${dinheiroPeriodo === k ? 'on' : ''}" data-p="${k}">${l}</button>`).join('')}
+  </div>`);
+  sel.querySelectorAll('[data-p]').forEach(b => b.addEventListener('click', () => { dinheiroPeriodo = b.dataset.p; render(); }));
+  root.appendChild(sel);
+
+  const parts = state.partidas.filter(p => p.finalizada && inPeriodo(p.data, dinheiroPeriodo));
+
+  // Ranking do período
+  const agg = {};
+  parts.forEach(p => p.players.forEach(pl => {
+    const s = agg[pl.id] || (agg[pl.id] = { nome: nomeJogador(pl.id, pl.nome), saldo: 0, pulgas: 0, vitorias: 0, partidas: 0 });
+    s.saldo += saldoExibido(p, pl.id);
+    s.pulgas += p.st.pulgas[pl.id] || 0;
+    if (p.vencedorId === pl.id) s.vitorias += 1;
+    s.partidas += 1;
+  }));
+  const rank = Object.values(agg).sort((a, b) => b.saldo - a.saldo);
+
+  const lb = el('<div class="card"><h2>🏆 Ranking do período</h2></div>');
+  if (!rank.length) {
+    lb.appendChild(el('<p class="muted">Nenhuma partida encerrada neste período.</p>'));
+  } else {
+    rank.forEach((s, i) => {
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`;
+      const cls = s.saldo >= 0 ? 'pos' : 'neg';
+      lb.appendChild(el(`
+        <div class="jog-row">
+          <div class="jog-info">
+            <div class="jog-name">${medal} ${s.nome}</div>
+            <div class="muted jog-stats">${s.partidas} partidas · 🏆 ${s.vitorias} · 🐛 ${s.pulgas}</div>
+          </div>
+          <div class="money ${cls}" style="font-weight:800;font-size:17px">${money(s.saldo)}</div>
+        </div>`));
+    });
+  }
+  root.appendChild(lb);
+
+  // Detalhe por dia / partida
+  const byDay = {};
+  parts.forEach(p => { (byDay[p.data] = byDay[p.data] || []).push(p); });
+  const days = Object.keys(byDay).sort().reverse();
+  days.forEach((day, di) => {
+    const det = el(`<details class="hist-day" ${di === 0 ? 'open' : ''}><summary>${formatDatePT(day)} — ${byDay[day].length} partida(s)</summary></details>`);
+    byDay[day].forEach(p => {
+      const venc = p.players.find(x => x.id === p.vencedorId);
+      const card = el(`<div class="hist-partida"><div class="h-title">Partida ${money(p.valorPartida)}/${money(p.valorBatida)} ${venc ? `<span class="badge">🏆 ${venc.nome}</span>` : ''}</div></div>`);
+      p.players.slice().sort((a, b) => saldoExibido(p, b.id) - saldoExibido(p, a.id)).forEach(pl => {
+        const v = saldoExibido(p, pl.id); const cls = v >= 0 ? 'pos' : 'neg';
+        const pulga = p.st.pulgas[pl.id] ? ` 🐛${p.st.pulgas[pl.id]}` : '';
+        card.appendChild(el(`<div class="row" style="justify-content:space-between;padding:3px 0"><span>${nomeJogador(pl.id, pl.nome)}${pulga}</span><span class="money ${cls}">${money(v)}</span></div>`));
+      });
+      det.appendChild(card);
+    });
+    root.appendChild(det);
+  });
 }
 
 /* ------------------------------ Histórico -------------------------------- */

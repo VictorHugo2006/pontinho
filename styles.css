@@ -32,10 +32,10 @@ body {
 .brand {
   margin: 0 0 8px; font-size: 22px; font-weight: 800; letter-spacing: .5px;
 }
-.tabs { display: flex; gap: 8px; }
+.tabs { display: flex; gap: 6px; }
 .tab {
   flex: 1; border: none; background: rgba(0,0,0,.06); color: var(--ink);
-  padding: 8px 12px; border-radius: 10px; font-weight: 700; font-size: 14px;
+  padding: 8px 6px; border-radius: 10px; font-weight: 700; font-size: 13px; white-space: nowrap;
 }
 .tab.active { background: var(--ink); color: #fff; }
 
@@ -110,6 +110,8 @@ input[type="text"], input[type="number"], input[type="date"] {
 .jog-stats { font-size: 12px; margin-top: 2px; }
 .jog-stats .money.pos { color: var(--green-strong); font-weight: 700; }
 .jog-stats .money.neg { color: var(--red); font-weight: 700; }
+.card .money.pos, .hist-partida .money.pos { color: var(--green-strong); font-weight: 700; }
+.card .money.neg, .hist-partida .money.neg { color: var(--red); font-weight: 700; }
 
 /* ---------- Scoreboard ---------- */
 .board-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: var(--radius); }
