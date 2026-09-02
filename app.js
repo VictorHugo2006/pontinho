@@ -255,7 +255,7 @@ function recompute(p) {
   p.pendingPulgas = pending;
 }
 
-function pushEvent(p, ev) { p.events.push(ev); recompute(p); DB.save(state); }
+function pushEvent(p, ev) { p.events.push(ev); recompute(p); persist(p); }
 
 function undoLast(p) {
   if (!p.events.length) return;
@@ -265,7 +265,7 @@ function undoLast(p) {
     p.players = p.players.filter(pl => pl.id !== ev.playerId);
   }
   recompute(p);
-  DB.save(state);
+  persist(p);
 }
 
 /* ----------------------- Ações (criam eventos) --------------------------- */
@@ -298,12 +298,12 @@ function editarRound(p, evIndex, rodada) {
     foraIds: [...(rodada.foraIds || [])],
     pontos: { ...(rodada.pontos || {}) },
   };
-  recompute(p); DB.save(state);
+  recompute(p); persist(p);
 }
 
 function excluirRound(p, evIndex) {
   p.events.splice(evIndex, 1);
-  recompute(p); DB.save(state);
+  recompute(p); persist(p);
 }
 
 function doVolta(p, playerId) { pushEvent(p, { type: 'volta', playerId }); }
@@ -316,22 +316,166 @@ function eliminar(p, playerId) {
     p.events.push({ type: 'finalizar', vencedorId: ativos[0] ? ativos[0].id : null });
     recompute(p);
   }
-  DB.save(state);
+  persist(p);
 }
 
 function finalizar(p, vencedorId) { pushEvent(p, { type: 'finalizar', vencedorId }); }
+
+/* ========================= Online (Firebase) ============================= */
+let fbAuth = null, fbDB = null, fbReady = null;
+function initFirebase() {
+  if (fbReady) return fbReady;
+  if (typeof firebase === 'undefined' || typeof FIREBASE_CONFIG === 'undefined') {
+    fbReady = Promise.reject(new Error('Firebase indisponível (offline?)'));
+    return fbReady;
+  }
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    fbAuth = firebase.auth();
+    fbDB = firebase.firestore();
+    fbReady = fbAuth.signInAnonymously().then(c => c.user);
+  } catch (e) { fbReady = Promise.reject(e); }
+  return fbReady;
+}
+
+let _toastTs = 0;
+function toastOnce(msg) { const n = Date.now(); if (n - _toastTs > 4000) { _toastTs = n; toast(msg); } }
+
+// Salva local e, se for o dono de um jogo online, envia para a nuvem
+function persist(p) {
+  DB.save(state);
+  if (p && p.online && p.online.role === 'host') syncUp(p);
+}
+
+function gameDocData(p, uid) {
+  return {
+    hostUid: uid,
+    data: p.data, valorPartida: p.valorPartida, valorBatida: p.valorBatida, limite: p.limite,
+    players: p.players.map(pl => ({ id: pl.id, nome: pl.nome })),
+    events: JSON.parse(JSON.stringify(p.events)),
+    finalizada: !!p.finalizada,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  };
+}
+
+async function syncUp(p) {
+  try {
+    const user = await initFirebase();
+    p.online.hostUid = user.uid;
+    await fbDB.collection('games').doc(p.online.code).set(gameDocData(p, user.uid));
+  } catch (e) { console.warn('sync falhou', e); toastOnce('Sem conexão — sincroniza quando voltar'); }
+}
+
+function genCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let s = ''; for (let i = 0; i < 5; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
+}
+
+async function goOnline(p) {
+  try {
+    const user = await initFirebase();
+    p.online = { code: genCode(), role: 'host', hostUid: user.uid };
+    await fbDB.collection('games').doc(p.online.code).set(gameDocData(p, user.uid));
+    DB.save(state); render();
+    toast('Ao vivo! Código: ' + p.online.code);
+  } catch (e) { console.warn(e); toast('Não foi possível ativar o online'); }
+}
+
+/* ---- Espectador (só acompanha) ---- */
+let viewerGame = null, viewerUnsub = null, viewerErr = null, viewerCode = '';
+function stopViewer() { if (viewerUnsub) { viewerUnsub(); viewerUnsub = null; } viewerGame = null; viewerErr = null; }
+function buildViewerGame(d, code) {
+  const g = {
+    id: 'viewer', data: d.data, valorPartida: d.valorPartida, valorBatida: d.valorBatida,
+    limite: d.limite || 100, players: d.players || [], events: d.events || [],
+    st: {}, rounds: [], pendingPulgas: [], finalizada: false, vencedorId: null,
+    online: { code, role: 'viewer' },
+  };
+  recompute(g);
+  return g;
+}
+async function joinOnline(code) {
+  code = (code || '').trim().toUpperCase();
+  if (!code) { toast('Digite o código do jogo'); return; }
+  viewerCode = code;
+  try {
+    await initFirebase();
+    stopViewer();
+    currentScreen = 'viewer'; render();
+    viewerUnsub = fbDB.collection('games').doc(code).onSnapshot(
+      snap => {
+        if (!snap.exists) { viewerErr = 'Jogo não encontrado. Confira o código.'; viewerGame = null; }
+        else { viewerGame = buildViewerGame(snap.data(), code); viewerErr = null; }
+        if (currentScreen === 'viewer') render();
+      },
+      err => { viewerErr = 'Erro ao conectar (verifique as Regras do Firestore).'; console.warn(err); if (currentScreen === 'viewer') render(); }
+    );
+  } catch (e) { console.warn(e); toast('Não foi possível conectar'); }
+}
+function leaveViewer() { stopViewer(); currentScreen = 'home'; render(); }
 
 /* ============================== RENDER ==================================== */
 const appRoot = () => document.getElementById('app');
 
 function render() {
   document.querySelectorAll('.tab').forEach(t =>
-    t.classList.toggle('active', t.dataset.screen === currentScreen));
+    t.classList.toggle('active', t.dataset.screen === currentScreen && currentScreen !== 'viewer'));
+  if (currentScreen === 'viewer') return renderViewer();
   if (currentScreen === 'history') return renderHistory();
   if (currentScreen === 'players') return renderJogadores();
   const p = currentPartida();
   if (!p) return renderSetup();
   return renderGame(p);
+}
+
+/* --------------------------- Tela do espectador -------------------------- */
+function renderViewer() {
+  const root = appRoot();
+  root.innerHTML = '';
+  const ob = document.querySelector('.fab-bar'); if (ob) ob.remove();
+
+  const top = el(`
+    <div class="card" style="display:flex;align-items:center;gap:10px;background:#eaf2ff">
+      <span>👁️ <b>Ao vivo</b> — código <b class="codebig">${viewerCode}</b></span>
+      <div class="spacer"></div>
+      <button class="btn ghost sm" id="leave">Sair</button>
+    </div>`);
+  top.querySelector('#leave').addEventListener('click', leaveViewer);
+  root.appendChild(top);
+
+  if (viewerErr) {
+    const c = el(`<div class="card"><p>${viewerErr}</p><button class="btn primary full" id="retry">Tentar de novo</button></div>`);
+    c.querySelector('#retry').addEventListener('click', () => joinOnline(viewerCode));
+    root.appendChild(c);
+    return;
+  }
+  if (!viewerGame) {
+    root.appendChild(el('<div class="empty"><div class="big">📡</div>Conectando ao jogo…</div>'));
+    return;
+  }
+
+  const p = viewerGame;
+  root.appendChild(el(`
+    <div class="game-head">
+      <div class="pill">Data <b>${formatDatePT(p.data)}</b></div>
+      <div class="pill">Partida <b>${money(p.valorPartida)}</b></div>
+      <div class="pill">Batida/Pulga <b>${money(p.valorBatida)}</b></div>
+      <div class="pill pote">Pote <b>${money(poteProjetado(p))}</b></div>
+      <div class="pill">Rodadas <b>${p.rounds.length}</b></div>
+    </div>`));
+  root.appendChild(buildBoard(p, false));
+
+  const risco = p.players.filter(pl => p.st.ativo[pl.id] && p.st.pontos[pl.id] >= p.limite);
+  if (risco.length) {
+    const box = el(`<div class="card"><h2>⚠️ Passaram de ${p.limite} pontos</h2></div>`);
+    risco.forEach(pl => box.appendChild(el(`<div style="margin-bottom:4px"><b>${pl.nome}</b> — ${p.st.pontos[pl.id]} pts</div>`)));
+    root.appendChild(box);
+  }
+  if (p.finalizada) {
+    const v = p.players.find(pl => pl.id === p.vencedorId);
+    root.appendChild(el(`<div class="card" style="text-align:center;background:var(--green)"><h2>🏆 Vencedor: ${v ? v.nome : '—'}</h2></div>`));
+  }
 }
 
 /* ------------------------------ Setup ------------------------------------ */
@@ -419,6 +563,21 @@ function renderSetup() {
     render();
   });
 
+  // Acompanhar um jogo ao vivo (espectador)
+  const watch = el(`
+    <div class="card">
+      <h2>👁️ Acompanhar um jogo ao vivo</h2>
+      <p class="muted">Digite o código que o dono do jogo compartilhou.</p>
+      <div class="row" style="gap:8px">
+        <input type="text" id="watch-code" placeholder="Ex: ABCDE" maxlength="6" style="text-transform:uppercase;letter-spacing:2px;font-weight:800">
+        <button class="btn primary" id="watch-btn">Assistir</button>
+      </div>
+    </div>`);
+  const watchGo = () => joinOnline(watch.querySelector('#watch-code').value);
+  watch.querySelector('#watch-btn').addEventListener('click', watchGo);
+  watch.querySelector('#watch-code').addEventListener('keydown', e => { if (e.key === 'Enter') watchGo(); });
+  root.appendChild(watch);
+
   if (state.partidas.length) {
     root.appendChild(el(`<p class="muted" style="text-align:center">Você tem ${state.partidas.length} partida(s) no histórico.</p>`));
   }
@@ -503,13 +662,31 @@ function renderGame(p) {
     </div>`);
   root.appendChild(head);
 
+  if (p.online && p.online.role === 'host') {
+    const b = el(`
+      <div class="card" style="background:#eaf2ff;display:flex;align-items:center;gap:10px">
+        <span>📡 <b>Ao vivo</b> — outros acompanham com o código <b class="codebig">${p.online.code}</b></span>
+        <div class="spacer"></div>
+        <button class="btn ghost sm" id="copy-code">Copiar</button>
+      </div>`);
+    b.querySelector('#copy-code').addEventListener('click', () => {
+      const link = location.origin + location.pathname + '#ver=' + p.online.code;
+      if (navigator.clipboard) navigator.clipboard.writeText(link).then(() => toast('Link copiado!'), () => toast('Código: ' + p.online.code));
+      else toast('Código: ' + p.online.code);
+    });
+    root.appendChild(b);
+  }
+
   if (!p.finalizada) {
     const toolbar = el(`
-      <div class="row" style="gap:8px;align-items:center;margin-bottom:8px">
+      <div class="row" style="gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
         <button class="btn ghost sm" id="add-player-btn">+ Jogador</button>
+        ${p.online ? '' : '<button class="btn ghost sm" id="online-btn">📡 Jogar online</button>'}
         <span class="muted" style="font-size:12px">Toque no <b>Rx&nbsp;✎</b> para editar a rodada</span>
       </div>`);
     toolbar.querySelector('#add-player-btn').addEventListener('click', () => openAddPlayerModal(p));
+    const ob = toolbar.querySelector('#online-btn');
+    if (ob) ob.addEventListener('click', () => goOnline(p));
     root.appendChild(toolbar);
   }
 
@@ -1032,10 +1209,22 @@ function closeModal() {
 
 /* ------------------------------ Navegação -------------------------------- */
 document.querySelectorAll('.tab').forEach(tab => {
-  tab.addEventListener('click', () => { currentScreen = tab.dataset.screen; render(); });
+  tab.addEventListener('click', () => {
+    if (currentScreen === 'viewer') stopViewer();
+    currentScreen = tab.dataset.screen;
+    render();
+  });
 });
 
-render();
+// Link compartilhado: .../pontinho/#ver=CODIGO abre direto como espectador
+function checkDeepLink() {
+  const m = (location.hash || '').match(/ver=([A-Za-z0-9]+)/);
+  if (m) { joinOnline(m[1]); return true; }
+  return false;
+}
+window.addEventListener('hashchange', checkDeepLink);
+
+if (!checkDeepLink()) render();
 
 /* ------------------------------ PWA -------------------------------------- */
 if ('serviceWorker' in navigator) {

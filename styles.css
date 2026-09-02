@@ -83,6 +83,13 @@ input[type="text"], input[type="number"], input[type="date"] {
 .player-input-row input { flex: 1; }
 .player-input-row .rm { background: none; border: none; color: var(--red); font-size: 20px; padding: 4px 8px; }
 
+/* ---------- Código de jogo online ---------- */
+.codebig {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.15em; letter-spacing: 2px; background: #fff;
+  padding: 2px 8px; border-radius: 8px; border: 1px solid var(--line);
+}
+
 /* ---------- Chips de seleção ---------- */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {
