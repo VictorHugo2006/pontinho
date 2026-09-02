@@ -155,6 +155,51 @@ function computeStats() {
   return stats;
 }
 
+/* --------------------------- Backup (export/import) ---------------------- */
+function exportBackup() {
+  const payload = { tipo: 'pontinho-backup', versao: 1, exportadoEm: new Date().toISOString(), dados: state };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `pontinho-backup-${todayISO()}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+  toast('Backup exportado');
+}
+
+function importBackup(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const raw = JSON.parse(reader.result);
+      const dados = raw && raw.dados ? raw.dados : raw; // aceita com/sem envelope
+      const jog = Array.isArray(dados.jogadores) ? dados.jogadores : [];
+      const par = Array.isArray(dados.partidas) ? dados.partidas : [];
+      if (!jog.length && !par.length) { toast('Arquivo sem dados do Pontinho'); return; }
+
+      let addJ = 0, addP = 0;
+      jog.forEach(j => {
+        if (!j || !j.id || !j.nome) return;
+        const existe = state.jogadores.some(x => x.id === j.id || x.nome.toLowerCase() === j.nome.toLowerCase());
+        if (!existe) { state.jogadores.push({ id: j.id, nome: j.nome }); addJ++; }
+      });
+      par.forEach(p => {
+        if (!p || !p.id) return;
+        if (!state.partidas.some(x => x.id === p.id)) { state.partidas.push(p); addP++; }
+      });
+
+      DB.save(state);
+      state = DB.load(); // reaplica migração/normalização
+      render();
+      toast(`Importado: +${addJ} jogador(es), +${addP} partida(s)`);
+    } catch (e) {
+      console.warn(e); toast('Arquivo inválido — não é um backup do Pontinho');
+    }
+  };
+  reader.readAsText(file);
+}
+
 /* ======================= Registro de eventos (log) =======================
    Todo o estado (pontos, saldo, ativo, voltas, pulgas, fecho, rodadas) é
    RECALCULADO a partir de p.events. Isso torna editar/desfazer confiável.
@@ -639,6 +684,26 @@ function renderJogadores() {
     });
   }
   root.appendChild(listCard);
+
+  // Backup: exportar / importar
+  const backup = el(`
+    <div class="card">
+      <h2>💾 Backup dos dados</h2>
+      <p class="muted">Salve seus jogadores e histórico num arquivo e leve para outro aparelho. A importação <b>soma</b> aos dados atuais (não apaga).</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <button class="btn primary" id="export-btn">⬆️ Exportar backup</button>
+        <button class="btn ghost" id="import-btn">⬇️ Importar backup</button>
+        <input type="file" id="import-file" accept="application/json,.json" hidden>
+      </div>
+    </div>`);
+  backup.querySelector('#export-btn').addEventListener('click', exportBackup);
+  const fileInput = backup.querySelector('#import-file');
+  backup.querySelector('#import-btn').addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files && fileInput.files[0]) importBackup(fileInput.files[0]);
+    fileInput.value = '';
+  });
+  root.appendChild(backup);
 }
 
 /* ------------------------------ Jogo ------------------------------------- */
