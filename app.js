@@ -223,6 +223,7 @@ function recompute(p) {
   const vB = p.valorBatida;
   const rounds = [];
   let pending = [];
+  const eliminados = new Set(); // quem já caiu fora (para marcar X nas rodadas seguintes)
   p.finalizada = false;
   p.vencedorId = null;
 
@@ -257,7 +258,7 @@ function recompute(p) {
       const pulgaIds = [...pending]; pending = [];
       const estourou = act.filter(id => st.pontos[id] >= p.limite);
       rounds.push({
-        n: rounds.length + 1, evIndex, activeIds: [...act],
+        n: rounds.length + 1, evIndex, activeIds: [...act], foraAcum: [...eliminados],
         batedorId: ev.batedorId || null, pulgaIds,
         foraIds: [...(ev.foraIds || [])], pontos: pontosDelta, voltas: [], estourou,
       });
@@ -274,13 +275,15 @@ function recompute(p) {
       st.voltas[ev.playerId] += 1;
       st.pontos[ev.playerId] = novo;
       st.ativo[ev.playerId] = true;
+      eliminados.delete(ev.playerId);
       const last = rounds[rounds.length - 1];
       if (last) last.voltas.push({ playerId: ev.playerId, pontos: novo });
     } else if (ev.type === 'eliminar') {
       st.ativo[ev.playerId] = false;
+      eliminados.add(ev.playerId);
     } else if (ev.type === 'finalizar') {
       if (pending.length) {
-        rounds.push({ n: rounds.length + 1, evIndex, activeIds: activeIds(), batedorId: null, pulgaIds: [...pending], foraIds: [], pontos: zero(0), voltas: [], estourou: [] });
+        rounds.push({ n: rounds.length + 1, evIndex, activeIds: activeIds(), foraAcum: [...eliminados], batedorId: null, pulgaIds: [...pending], foraIds: [], pontos: zero(0), voltas: [], estourou: [] });
         pending = [];
       }
       const fecho = {}; let total = 0;
@@ -923,8 +926,11 @@ function roundMark(p, r, playerId) {
   // Voltou nesta rodada: célula azul com os pontos do maior
   const volta = (r.voltas || []).find(v => v.playerId === playerId);
   if (volta) return `<span class="cell-volta">${volta.pontos}</span>`;
-  // Não estava na partida nesta rodada (entrou depois / já caiu fora): célula em branco
-  if (r.activeIds && !r.activeIds.includes(playerId)) return '';
+  // Não estava ativo nesta rodada: se já tinha caído fora, mostra X; se entrou depois, em branco
+  if (r.activeIds && !r.activeIds.includes(playerId)) {
+    if (r.foraAcum && r.foraAcum.includes(playerId)) return '<span class="round-mark sign">X</span>';
+    return '';
+  }
   if (r.batedorId === playerId) return '<span class="round-mark sign">–</span>';
   const isPulga = (r.pulgaIds || []).includes(playerId);
   if ((r.foraIds || []).includes(playerId)) return '<span class="round-mark sign">X</span>';
@@ -1032,7 +1038,7 @@ function openRoundModal(p) {
     <div class="modal">
       <div class="row"><h2>Nova rodada</h2><div class="spacer"></div>
         <button class="btn ghost sm close">Fechar</button></div>
-      <p class="muted">Marque quem <b>bateu</b> (–). Cada um dos outros precisa ter os <b>pontos</b> digitados ou o <b>fora</b> (X) marcado. Pulga é no botão 🐛.</p>
+      <p class="muted">Marque quem <b>bateu</b> (–). Cada um dos outros precisa ter os <b>pontos</b> digitados ou o <b>X Fora</b> marcado. <b>X Fora = sai da partida</b> (nas próximas rodadas já aparece fora e não soma mais). Pulga é no botão 🐛.</p>
       <div class="round-players"></div>
       <div style="height:14px"></div>
       <button class="btn primary full" id="save-round">Salvar rodada</button>
@@ -1095,9 +1101,20 @@ function openRoundModal(p) {
       toast('Falta pontos ou "Fora": ' + faltam.map(x => x.nome).join(', '));
       return;
     }
-    const res = applyRound(p, draft);
+    // Registra a rodada; quem levou X Fora SAI da partida (elimina a partir da próxima rodada)
+    p.events.push({ type: 'round', batedorId: draft.batedorId, foraIds: [...draft.foraIds], pontos: { ...draft.pontos } });
+    draft.foraIds.forEach(id => p.events.push({ type: 'eliminar', playerId: id }));
+    recompute(p);
+    const rest = activePlayers(p);
+    if (rest.length <= 1 && !p.finalizada) {
+      p.events.push({ type: 'finalizar', vencedorId: rest[0] ? rest[0].id : null });
+      recompute(p);
+    }
+    persist(p);
     closeModal();
-    if (res.estourou.length) toast('Alguém passou de ' + p.limite + ' pontos!');
+    const estourou = (p.rounds[p.rounds.length - 1] || {}).estourou || [];
+    if (p.finalizada) { currentScreen = 'history'; toast('Partida encerrada!'); }
+    else if (estourou.length) toast('Alguém passou de ' + p.limite + ' pontos!');
     render();
   });
   body.querySelector('.close').addEventListener('click', closeModal);
