@@ -818,6 +818,7 @@ function renderGame(p) {
       rowEl.querySelector('[data-act="elim"]').addEventListener('click', () => {
         eliminar(p, pl.id);
         toast(p.finalizada ? 'Partida encerrada!' : `${pl.nome} saiu da partida`);
+        if (p.finalizada) currentScreen = 'history';
         render();
       });
       box.appendChild(rowEl);
@@ -1185,12 +1186,14 @@ function openFinishModal(p) {
   ativos.forEach(pl => {
     const b = el(`<button class="btn green full" style="margin-bottom:8px">${pl.nome} venceu</button>`);
     b.addEventListener('click', () => {
-      finalizar(p, pl.id); closeModal(); toast(`${pl.nome} venceu!`); render();
+      finalizar(p, pl.id); closeModal(); toast(`${pl.nome} venceu!`);
+      currentScreen = 'history'; render();
     });
     list.appendChild(b);
   });
   body.querySelector('#close-nowin').addEventListener('click', () => {
-    finalizar(p, null); closeModal(); render();
+    finalizar(p, null); closeModal();
+    currentScreen = 'history'; render();
   });
   body.querySelector('.close').addEventListener('click', closeModal);
   showModal(body);
@@ -1261,9 +1264,12 @@ function renderDinheiro() {
   const days = Object.keys(byDay).sort().reverse();
   days.forEach((day, di) => {
     const det = el(`<details class="hist-day" ${di === 0 ? 'open' : ''}><summary>${formatDatePT(day)} — ${byDay[day].length} partida(s)</summary></details>`);
-    byDay[day].forEach(p => {
+    // Numera cronologicamente (1ª, 2ª...) e mostra a mais recente em cima
+    const numeradas = byDay[day].map((p, i) => ({ p, n: i + 1 }));
+    numeradas.reverse().forEach(({ p, n }) => {
       const venc = p.players.find(x => x.id === p.vencedorId);
-      const card = el(`<div class="hist-partida"><div class="h-title">Partida ${money(p.valorPartida)}/${money(p.valorBatida)} ${venc ? `<span class="badge">🏆 ${venc.nome}</span>` : ''}</div></div>`);
+      const num = String(n).padStart(2, '0');
+      const card = el(`<div class="hist-partida"><div class="h-title">${num}ª Partida · ${money(p.valorPartida)}/${money(p.valorBatida)} ${venc ? `<span class="badge">🏆 ${venc.nome}</span>` : ''}</div></div>`);
       p.players.slice().sort((a, b) => saldoExibido(p, b.id) - saldoExibido(p, a.id)).forEach(pl => {
         const v = saldoExibido(p, pl.id); const cls = v >= 0 ? 'pos' : 'neg';
         const pulga = p.st.pulgas[pl.id] ? ` 🐛${p.st.pulgas[pl.id]}` : '';
@@ -1306,7 +1312,9 @@ function renderHistory() {
 
   days.forEach(day => {
     const det = el(`<details class="hist-day" ${day === days[0] ? 'open' : ''}><summary>${formatDatePT(day)} — ${byDay[day].length} partida(s)</summary></details>`);
-    byDay[day].forEach(p => det.appendChild(histCard(p)));
+    // Numera na ordem cronológica (1ª, 2ª...) e exibe a mais recente em cima
+    const numeradas = byDay[day].map((p, i) => ({ p, n: i + 1 }));
+    numeradas.reverse().forEach(({ p, n }) => det.appendChild(histCard(p, n)));
     root.appendChild(det);
   });
 
@@ -1314,16 +1322,17 @@ function renderHistory() {
   const clear = el('<button class="btn ghost full">Apagar todo o histórico</button>');
   clear.addEventListener('click', () => {
     if (confirm('Apagar TODAS as partidas? Esta ação não pode ser desfeita.')) {
-      state = { partidas: [] }; DB.save(state); render();
+      state.partidas = []; DB.save(state); render();
     }
   });
   root.appendChild(clear);
 }
 
-function histCard(p) {
+function histCard(p, numero) {
   const venc = p.players.find(pl => pl.id === p.vencedorId);
+  const num = numero != null ? String(numero).padStart(2, '0') : '';
   const c = el(`<div class="hist-partida">
-    <div class="h-title">${p.finalizada ? '✅' : '⏳'} Partida ${money(p.valorPartida)}/${money(p.valorBatida)} — ${p.rounds.length} rodadas
+    <div class="h-title">${p.finalizada ? '✅' : '⏳'} ${num ? num + 'ª Partida' : 'Partida'} · ${money(p.valorPartida)}/${money(p.valorBatida)} — ${p.rounds.length} rodadas
     ${venc ? `<span class="badge">🏆 ${venc.nome}</span>` : ''}</div>
   </div>`);
   c.appendChild(buildBoard(p));
