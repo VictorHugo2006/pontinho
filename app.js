@@ -69,9 +69,10 @@ function maxPontosAtivos(p, excludeId) {
   const vals = activePlayers(p).filter(pl => pl.id !== excludeId).map(pl => p.st.pontos[pl.id]);
   return vals.length ? Math.max(...vals) : 0;
 }
-// Quanto um jogador paga no fim: valor da partida × (nº de voltas + 1)
+// Quanto um jogador paga no fim: dobra a cada volta.
+// nunca voltou = valorPartida×1; 1ª volta ×2; 2ª ×4; 3ª ×8... (= valorPartida × 2^voltas)
 function dividaFinal(p, playerId) {
-  return p.valorPartida * (p.st.voltas[playerId] + 1);
+  return p.valorPartida * Math.pow(2, p.st.voltas[playerId]);
 }
 // Dinheiro exibido: saldo das rodadas + fecho (só quando a partida terminou)
 function saldoExibido(p, playerId) {
@@ -289,7 +290,7 @@ function recompute(p) {
       const fecho = {}; let total = 0;
       players.forEach(x => {
         if (x.id === ev.vencedorId) return;
-        const d = p.valorPartida * (st.voltas[x.id] + 1);
+        const d = p.valorPartida * Math.pow(2, st.voltas[x.id]);
         fecho[x.id] = -d; total += d;
       });
       if (ev.vencedorId) fecho[ev.vencedorId] = total;
@@ -804,7 +805,7 @@ function renderGame(p) {
   if (risco.length) {
     const box = el(`<div class="card"><h2>⚠️ Passaram de ${p.limite} pontos</h2></div>`);
     risco.forEach(pl => {
-      const proxVolta = p.valorPartida * (p.st.voltas[pl.id] + 2); // quanto passará a dever se voltar
+      const proxVolta = p.valorPartida * Math.pow(2, p.st.voltas[pl.id] + 1); // quanto pagará se voltar agora
       const rowEl = el(`
         <div class="row" style="justify-content:space-between;margin-bottom:10px">
           <div><b>${pl.nome}</b> — ${p.st.pontos[pl.id]} pts</div>

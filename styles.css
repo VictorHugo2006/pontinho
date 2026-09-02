@@ -20,6 +20,13 @@ body {
   background: var(--bg);
   color: var(--ink);
   padding-bottom: 90px;
+  /* Evita que long-press selecione texto da interface e abra "pesquisar no Google" */
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
+}
+/* Campos continuam selecionáveis/editáveis normalmente */
+input, textarea, [contenteditable] {
+  -webkit-user-select: text; user-select: text; -webkit-touch-callout: default;
 }
 
 /* ---------- Topbar ---------- */
@@ -166,7 +173,7 @@ table.board .money.lose { color: var(--red); }
   background: #fafafa; border: 1px solid var(--line); border-radius: 12px; padding: 8px 10px;
 }
 .rp .rp-name { font-weight: 700; font-size: 14px; }
-.rp .rp-pts { width: 78px; }
+.rp .rp-pts { width: 78px; height: 42px; font-size: 16px; }
 .rp-toggle {
   border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: 8px 10px;
   font-weight: 700; font-size: 13px;
@@ -186,6 +193,9 @@ table.board .money.lose { color: var(--red); }
 .modal {
   background: #fff; width: 100%; max-width: 900px; border-radius: 18px 18px 0 0;
   padding: 18px; max-height: 92vh; overflow-y: auto;
+  /* espaço extra no rodapé: fica acima da barra de gestos/pesquisa do Android */
+  padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+  scroll-padding-bottom: 140px;
 }
 .modal h2 { margin: 0 0 6px; }
 .modal .close { position: sticky; top: 0; }
@@ -205,7 +215,8 @@ table.board .money.lose { color: var(--red); }
 .fab-bar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
   background: rgba(255,255,255,.96); backdrop-filter: blur(6px);
-  border-top: 1px solid var(--line); padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
   display: flex; gap: 10px; max-width: 900px; margin: 0 auto;
 }
 .fab-bar .btn { flex: 1; }
