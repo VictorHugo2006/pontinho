@@ -179,6 +179,7 @@ table.board .money.lose { color: var(--red); }
 }
 .modal h2 { margin: 0 0 6px; }
 .modal .close { position: sticky; top: 0; }
+.modal .rp, .modal input { scroll-margin: 80px 0 120px; }
 
 /* ---------- History ---------- */
 .hist-day { margin-bottom: 8px; }

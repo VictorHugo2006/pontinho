@@ -992,14 +992,41 @@ function histCard(p) {
 }
 
 /* ------------------------------- Modal ----------------------------------- */
+let _vvCleanup = null;
 function showModal(node) {
   const rootM = document.getElementById('modal-root');
   const overlay = el('<div class="modal-overlay"></div>');
   overlay.appendChild(node);
   overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+
+  // Ao focar um campo, rola ele para a área visível (acima do teclado no celular)
+  overlay.addEventListener('focusin', (e) => {
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) {
+      setTimeout(() => { try { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) {} }, 300);
+    }
+  });
+
   rootM.appendChild(overlay);
+
+  // Ajusta o modal ao teclado virtual usando visualViewport:
+  // encolhe a "folha" para caber na área visível acima do teclado.
+  if (window.visualViewport) {
+    const vv = window.visualViewport;
+    const apply = () => {
+      overlay.style.top = vv.offsetTop + 'px';
+      overlay.style.height = vv.height + 'px';
+      overlay.style.bottom = 'auto';
+      node.style.maxHeight = vv.height + 'px';
+    };
+    apply();
+    vv.addEventListener('resize', apply);
+    vv.addEventListener('scroll', apply);
+    _vvCleanup = () => { vv.removeEventListener('resize', apply); vv.removeEventListener('scroll', apply); };
+  }
 }
 function closeModal() {
+  if (_vvCleanup) { _vvCleanup(); _vvCleanup = null; }
   document.getElementById('modal-root').innerHTML = '';
 }
 
