@@ -176,6 +176,7 @@ table.board .money.lose { color: var(--red); }
 .rp-toggle.on.fora { background: var(--red); color: #fff; border-color: var(--red); }
 .rp.is-bat { opacity: .95; outline: 2px solid var(--ink); }
 .rp.is-fora .rp-pts { visibility: hidden; }
+.rp.rp-missing { outline: 2px solid var(--red); background: #fdecec; }
 
 /* ---------- Modal ---------- */
 .modal-overlay {

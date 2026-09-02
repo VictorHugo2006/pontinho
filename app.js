@@ -1019,15 +1019,20 @@ function openPulgaModal(p) {
 }
 
 /* --------------------------- Modal de rodada ----------------------------- */
+// Falta preencher: jogador ativo que não é o batedor, não está "fora" e não tem pontos
+function pontoVazio(v) { return v === undefined || v === null || String(v).trim() === ''; }
+
 function openRoundModal(p) {
   const ativos = activePlayers(p);
   const draft = { batedorId: null, foraIds: [], pontos: {} };
+  let tentou = false;
+  const falta = (pl) => pl.id !== draft.batedorId && !draft.foraIds.includes(pl.id) && pontoVazio(draft.pontos[pl.id]);
 
   const body = el(`
     <div class="modal">
       <div class="row"><h2>Nova rodada</h2><div class="spacer"></div>
         <button class="btn ghost sm close">Fechar</button></div>
-      <p class="muted">Marque quem <b>bateu</b> (–) e digite os pontos de cada perdedor. Quem correu marque <b>fora</b> (X). A pulga é registrada no botão 🐛.</p>
+      <p class="muted">Marque quem <b>bateu</b> (–). Cada um dos outros precisa ter os <b>pontos</b> digitados ou o <b>fora</b> (X) marcado. Pulga é no botão 🐛.</p>
       <div class="round-players"></div>
       <div style="height:14px"></div>
       <button class="btn primary full" id="save-round">Salvar rodada</button>
@@ -1040,8 +1045,9 @@ function openRoundModal(p) {
     ativos.forEach(pl => {
       const isBat = draft.batedorId === pl.id;
       const isFora = draft.foraIds.includes(pl.id);
+      const missing = tentou && falta(pl);
       const rp = el(`
-        <div class="rp ${isBat ? 'is-bat' : ''} ${isFora ? 'is-fora' : ''}">
+        <div class="rp ${isBat ? 'is-bat' : ''} ${isFora ? 'is-fora' : ''} ${missing ? 'rp-missing' : ''}">
           <div class="rp-name">${pl.nome} <span class="muted">(${p.st.pontos[pl.id]})</span></div>
           <input class="rp-pts" type="number" inputmode="numeric" placeholder="pts"
                  value="${draft.pontos[pl.id] ?? ''}" ${isBat ? 'disabled' : ''}>
@@ -1052,9 +1058,13 @@ function openRoundModal(p) {
         </div>`);
 
       const ptsInput = rp.querySelector('.rp-pts');
-      ptsInput.addEventListener('input', () => { draft.pontos[pl.id] = ptsInput.value; });
+      ptsInput.addEventListener('input', () => {
+        draft.pontos[pl.id] = ptsInput.value;
+        if (tentou) rp.classList.toggle('rp-missing', falta(pl));
+      });
 
       rp.querySelector('[data-t="bat"]').addEventListener('click', () => {
+        // Só um batedor: define este e limpa qualquer outro automaticamente
         draft.batedorId = isBat ? null : pl.id;
         if (draft.batedorId === pl.id) {
           draft.foraIds = draft.foraIds.filter(x => x !== pl.id);
@@ -1079,6 +1089,12 @@ function openRoundModal(p) {
 
   body.querySelector('#save-round').addEventListener('click', () => {
     if (!draft.batedorId) { toast('Marque quem bateu (–)'); return; }
+    const faltam = ativos.filter(falta);
+    if (faltam.length) {
+      tentou = true; refresh();
+      toast('Falta pontos ou "Fora": ' + faltam.map(x => x.nome).join(', '));
+      return;
+    }
     const res = applyRound(p, draft);
     closeModal();
     if (res.estourou.length) toast('Alguém passou de ' + p.limite + ' pontos!');
@@ -1122,14 +1138,18 @@ function openRoundEditModal(p, evIndex) {
       </div>
     </div>`);
 
+  let tentou = false;
+  const falta = (pl) => pl.id !== draft.batedorId && !draft.foraIds.includes(pl.id) && pontoVazio(draft.pontos[pl.id]);
+
   const listEl = body.querySelector('.round-players');
   function refresh() {
     listEl.innerHTML = '';
     ativos.forEach(pl => {
       const isBat = draft.batedorId === pl.id;
       const isFora = draft.foraIds.includes(pl.id);
+      const missing = tentou && falta(pl);
       const rp = el(`
-        <div class="rp ${isBat ? 'is-bat' : ''} ${isFora ? 'is-fora' : ''}">
+        <div class="rp ${isBat ? 'is-bat' : ''} ${isFora ? 'is-fora' : ''} ${missing ? 'rp-missing' : ''}">
           <div class="rp-name">${pl.nome}</div>
           <input class="rp-pts" type="number" inputmode="numeric" placeholder="pts"
                  value="${draft.pontos[pl.id] ?? ''}" ${isBat ? 'disabled' : ''}>
@@ -1139,7 +1159,10 @@ function openRoundEditModal(p, evIndex) {
           </div>
         </div>`);
       const ptsInput = rp.querySelector('.rp-pts');
-      ptsInput.addEventListener('input', () => { draft.pontos[pl.id] = ptsInput.value; });
+      ptsInput.addEventListener('input', () => {
+        draft.pontos[pl.id] = ptsInput.value;
+        if (tentou) rp.classList.toggle('rp-missing', falta(pl));
+      });
       rp.querySelector('[data-t="bat"]').addEventListener('click', () => {
         draft.batedorId = isBat ? null : pl.id;
         if (draft.batedorId === pl.id) { draft.foraIds = draft.foraIds.filter(x => x !== pl.id); delete draft.pontos[pl.id]; }
@@ -1157,6 +1180,12 @@ function openRoundEditModal(p, evIndex) {
 
   body.querySelector('#save-round').addEventListener('click', () => {
     if (!draft.batedorId) { toast('Marque quem bateu (–)'); return; }
+    const faltam = ativos.filter(falta);
+    if (faltam.length) {
+      tentou = true; refresh();
+      toast('Falta pontos ou "Fora": ' + faltam.map(x => x.nome).join(', '));
+      return;
+    }
     editarRound(p, evIndex, draft);
     closeModal(); toast('Rodada atualizada'); render();
   });
