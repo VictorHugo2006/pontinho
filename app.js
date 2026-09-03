@@ -563,7 +563,7 @@ function renderViewer() {
     const ganhando = dinheiro >= 0;
     const eliminado = !p.st.ativo[me.id];
     const risco = !eliminado && pts >= p.limite;
-    const statusTxt = eliminado ? 'Fora da partida' : (risco ? `Passou de ${p.limite}!` : `Faltam ${p.limite - pts} pra ${p.limite}`);
+    const statusTxt = eliminado ? 'Fora da partida' : (risco ? `Passou de ${p.limite}!` : `Você se salva com ${p.limite - 1 - pts}`);
     // Previsão do valor final SE NÃO GANHAR: saldo atual - valor da partida (já com a dobra da volta)
     const dFinal = dividaFinal(p, me.id);
     const previsao = dinheiro - dFinal;
@@ -941,7 +941,7 @@ function playerCardInner(p, id) {
   const ganhando = dinheiro >= 0;
   const eliminado = !p.st.ativo[id];
   const risco = !eliminado && pts >= p.limite;
-  const statusTxt = eliminado ? 'Fora da partida' : (risco ? `Passou de ${p.limite}!` : `Faltam ${p.limite - pts} pra ${p.limite}`);
+  const statusTxt = eliminado ? 'Fora da partida' : (risco ? `Passou de ${p.limite}!` : `Você se salva com ${p.limite - 1 - pts}`);
   const extras = [];
   if (p.st.voltas[id]) extras.push(`↩ ${p.st.voltas[id]} volta(s)`);
   if (p.st.pulgas[id]) extras.push(`🐛 ${p.st.pulgas[id]}`);
