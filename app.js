@@ -836,7 +836,7 @@ function renderGame(p) {
       <div class="row" style="gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
         <button class="btn ghost sm" id="add-player-btn">+ Jogador</button>
         ${p.online ? '' : '<button class="btn ghost sm" id="online-btn">📡 Jogar online</button>'}
-        <span class="muted" style="font-size:12px">Toque no <b>Rx&nbsp;✎</b> para editar a rodada</span>
+        <span class="muted" style="font-size:12px">Toque no <b>nome</b> p/ ver pontos e $ · no <b>Rx&nbsp;✎</b> p/ editar</span>
       </div>`);
     toolbar.querySelector('#add-player-btn').addEventListener('click', () => openAddPlayerModal(p));
     const ob = toolbar.querySelector('#online-btn');
@@ -929,6 +929,48 @@ function renderGame(p) {
   }
 }
 
+// Conteúdo do card pessoal de um jogador (pontos, dinheiro, previsão)
+function playerCardInner(p, id) {
+  const pts = p.st.pontos[id];
+  const dinheiro = saldoExibido(p, id);
+  const ganhando = dinheiro >= 0;
+  const eliminado = !p.st.ativo[id];
+  const risco = !eliminado && pts >= p.limite;
+  const statusTxt = eliminado ? 'Fora da partida' : (risco ? `Passou de ${p.limite}!` : `Faltam ${p.limite - pts} pra ${p.limite}`);
+  const extras = [];
+  if (p.st.voltas[id]) extras.push(`↩ ${p.st.voltas[id]} volta(s)`);
+  if (p.st.pulgas[id]) extras.push(`🐛 ${p.st.pulgas[id]}`);
+  const dFinal = dividaFinal(p, id);
+  const previsao = dinheiro - dFinal;
+  const prevPos = previsao >= 0;
+  return `
+    <div class="me-grid">
+      <div class="me-box"><div class="me-label">PONTOS</div><div class="me-num">${pts}</div><div class="me-sub">${statusTxt}</div></div>
+      <div class="me-box ${ganhando ? 'pos' : 'neg'}"><div class="me-label">${ganhando ? 'GANHANDO' : 'DEVENDO'}</div><div class="me-num">${money(Math.abs(dinheiro))}</div><div class="me-sub">${extras.join(' · ') || 'parcial'}</div></div>
+    </div>
+    ${p.finalizada ? '' : `
+    <div class="me-prev ${prevPos ? 'pos' : 'neg'}">
+      <span>Previsão no fim <b>se não ganhar</b></span>
+      <b class="me-prev-num">${prevPos ? '+' : '-'} ${money(Math.abs(previsao))}</b>
+    </div>
+    <div class="me-note">Já inclui o valor da partida (${money(dFinal)}${p.st.voltas[id] ? ', com ' + p.st.voltas[id] + ' volta(s)' : ''}). Se ganhar, recebe o total dos outros.</div>`}
+  `;
+}
+
+// Modal com o card pessoal (abre ao tocar no nome do jogador no placar)
+function openPlayerCard(p, id) {
+  const pl = p.players.find(x => x.id === id);
+  if (!pl) return;
+  const body = el(`
+    <div class="modal">
+      <div class="row"><h2>${pl.nome}</h2><div class="spacer"></div>
+        <button class="btn ghost sm close">Fechar</button></div>
+      ${playerCardInner(p, id)}
+    </div>`);
+  body.querySelector('.close').addEventListener('click', closeModal);
+  showModal(body);
+}
+
 function buildBoard(p, editable) {
   const wrap = el('<div class="board-scroll"></div>');
   const table = el('<table class="board"></table>');
@@ -946,7 +988,9 @@ function buildBoard(p, editable) {
     const chip = s === 'elim' ? '<span class="status-chip elim">FORA</span>'
       : s === 'risco' ? '<span class="status-chip risco">+100</span>'
       : `<span class="status-chip ativo">${p.st.voltas[pl.id] ? 'V' + p.st.voltas[pl.id] : 'ok'}</span>`;
-    trNameP.appendChild(el(`<th class="name ${winLose}">${pl.nome}<br>${chip}</th>`));
+    const th = el(`<th class="name clickable ${winLose}">${pl.nome}<br>${chip}</th>`);
+    th.addEventListener('click', () => openPlayerCard(p, pl.id));
+    trNameP.appendChild(th);
   });
   theadP.appendChild(trTotP);
   theadP.appendChild(trNameP);

@@ -162,6 +162,8 @@ table.board th, table.board td {
 table.board thead.pontos th { background: var(--yellow); }
 table.board thead.dinheiro th { background: var(--green); }
 table.board .name { font-weight: 700; font-size: 12px; }
+table.board .name.clickable { cursor: pointer; text-decoration: underline dotted; }
+table.board .name.clickable:active { background: #fff6bf; }
 table.board .total-pts { font-weight: 800; font-size: 16px; }
 table.board .money.pos { color: var(--green-strong); font-weight: 700; }
 table.board .money.neg { color: var(--red); font-weight: 700; }
