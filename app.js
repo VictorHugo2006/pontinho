@@ -929,6 +929,12 @@ function renderGame(p) {
   }
 }
 
+// Soma o dinheiro de um jogador em TODAS as partidas de um dia (financeiro geral do dia)
+function financeiroDia(id, data) {
+  const parts = state.partidas.filter(x => x.data === data && x.players.some(pl => pl.id === id));
+  return { total: parts.reduce((s, x) => s + saldoExibido(x, id), 0), n: parts.length };
+}
+
 // Conteúdo do card pessoal de um jogador (pontos, dinheiro, previsão)
 function playerCardInner(p, id) {
   const pts = p.st.pontos[id];
@@ -943,6 +949,18 @@ function playerCardInner(p, id) {
   const dFinal = dividaFinal(p, id);
   const previsao = dinheiro - dFinal;
   const prevPos = previsao >= 0;
+  // Financeiro geral do dia (só quando as partidas do dia estão neste aparelho — ex.: quem marca)
+  const isLocal = state.partidas.some(x => x.id === p.id);
+  let geralHtml = '';
+  if (isLocal) {
+    const g = financeiroDia(id, p.data);
+    const gPos = g.total >= 0;
+    geralHtml = `
+      <div class="me-geral ${gPos ? 'pos' : 'neg'}">
+        <div><div class="me-label">FINANCEIRO GERAL DO DIA</div><div class="me-sub">${g.n} partida(s) · ${formatDatePT(p.data)}</div></div>
+        <b class="me-prev-num">${gPos ? '+' : '-'} ${money(Math.abs(g.total))}</b>
+      </div>`;
+  }
   return `
     <div class="me-grid">
       <div class="me-box"><div class="me-label">PONTOS</div><div class="me-num">${pts}</div><div class="me-sub">${statusTxt}</div></div>
@@ -954,6 +972,7 @@ function playerCardInner(p, id) {
       <b class="me-prev-num">${prevPos ? '+' : '-'} ${money(Math.abs(previsao))}</b>
     </div>
     <div class="me-note">Já inclui o valor da partida (${money(dFinal)}${p.st.voltas[id] ? ', com ' + p.st.voltas[id] + ' volta(s)' : ''}). Se ganhar, recebe o total dos outros.</div>`}
+    ${geralHtml}
   `;
 }
 
