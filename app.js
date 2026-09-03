@@ -564,6 +564,10 @@ function renderViewer() {
     const eliminado = !p.st.ativo[me.id];
     const risco = !eliminado && pts >= p.limite;
     const statusTxt = eliminado ? 'Fora da partida' : (risco ? `Passou de ${p.limite}!` : `Faltam ${p.limite - pts} pra ${p.limite}`);
+    // Previsão do valor final SE NÃO GANHAR: saldo atual - valor da partida (já com a dobra da volta)
+    const dFinal = dividaFinal(p, me.id);
+    const previsao = dinheiro - dFinal;
+    const prevPos = previsao >= 0;
     const extras = [];
     if (p.st.voltas[me.id]) extras.push(`↩ ${p.st.voltas[me.id]} volta(s)`);
     if (p.st.pulgas[me.id]) extras.push(`🐛 ${p.st.pulgas[me.id]}`);
@@ -574,7 +578,12 @@ function renderViewer() {
           <div class="me-box"><div class="me-label">SEUS PONTOS</div><div class="me-num">${pts}</div><div class="me-sub">${statusTxt}</div></div>
           <div class="me-box ${ganhando ? 'pos' : 'neg'}"><div class="me-label">${ganhando ? 'GANHANDO' : 'DEVENDO'}</div><div class="me-num">${money(Math.abs(dinheiro))}</div><div class="me-sub">${extras.join(' · ') || ' '}</div></div>
         </div>
-        ${p.finalizada ? '' : '<div class="me-note">Parcial ao vivo — o valor da partida entra no encerramento.</div>'}
+        ${p.finalizada ? '' : `
+        <div class="me-prev ${prevPos ? 'pos' : 'neg'}">
+          <span>Previsão no fim <b>se não ganhar</b></span>
+          <b class="me-prev-num">${prevPos ? '+' : '-'} ${money(Math.abs(previsao))}</b>
+        </div>
+        <div class="me-note">Já inclui o valor da partida (${money(dFinal)}${p.st.voltas[me.id] ? ', com ' + p.st.voltas[me.id] + ' volta(s)' : ''}). Se você ganhar, recebe o total dos outros.</div>`}
       </div>`);
     card.querySelector('#me-trocar').addEventListener('click', () => { setViewerMe(viewerCode, null); render(); });
     root.appendChild(card);
