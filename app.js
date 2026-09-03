@@ -762,8 +762,7 @@ function renderJogadores() {
           </div>
         </div>`);
       row.querySelector('[data-act="edit"]').addEventListener('click', () => {
-        const novo = prompt('Novo nome:', j.nome);
-        if (novo != null) { renameJogador(j.id, novo); render(); }
+        openNomeModal(j.nome, (novo) => { renameJogador(j.id, novo); render(); });
       });
       row.querySelector('[data-act="del"]').addEventListener('click', () => {
         const msg = s.partidas ? `${j.nome} tem ${s.partidas} partida(s) no histórico. Excluir do cadastro? (o histórico das partidas é mantido)` : `Excluir ${j.nome}?`;
@@ -1373,7 +1372,7 @@ function openFinishModal(p) {
 }
 
 /* ------------------------------ Dinheiro --------------------------------- */
-let dinheiroPeriodo = 'mes'; // dia | semana | mes | ano | tudo
+let dinheiroPeriodo = 'dia'; // dia | semana | mes | ano | tudo
 function inPeriodo(dataISO, periodo) {
   const hoje = todayISO();
   if (periodo === 'tudo') return true;
@@ -1565,11 +1564,37 @@ function closeModal() {
   document.getElementById('modal-root').innerHTML = '';
 }
 
+// Modal bonito para editar o nome do jogador (substitui o prompt do navegador)
+function openNomeModal(nomeAtual, onOk) {
+  const body = el(`
+    <div class="modal">
+      <div class="row"><h2>Editar nome</h2><div class="spacer"></div>
+        <button class="btn ghost sm close">Fechar</button></div>
+      <label class="field"><span>Nome do jogador</span>
+        <input type="text" id="nome-input" value="${(nomeAtual || '').replace(/"/g, '&quot;')}" autocomplete="off">
+      </label>
+      <div style="height:14px"></div>
+      <div class="btnbar">
+        <button class="btn ghost" id="nome-cancel">Cancelar</button>
+        <button class="btn primary" id="nome-ok">Salvar</button>
+      </div>
+    </div>`);
+  const input = body.querySelector('#nome-input');
+  const ok = () => { const v = input.value.trim(); if (!v) { toast('Digite um nome'); return; } closeModal(); onOk(v); };
+  body.querySelector('#nome-ok').addEventListener('click', ok);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') ok(); });
+  body.querySelector('#nome-cancel').addEventListener('click', closeModal);
+  body.querySelector('.close').addEventListener('click', closeModal);
+  showModal(body);
+  setTimeout(() => { input.focus(); input.select(); }, 60);
+}
+
 /* ------------------------------ Navegação -------------------------------- */
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
     if (currentScreen === 'viewer') stopViewer();
     currentScreen = tab.dataset.screen;
+    if (currentScreen === 'dinheiro') dinheiroPeriodo = 'dia'; // sempre abre em Hoje
     render();
   });
 });
