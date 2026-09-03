@@ -466,8 +466,10 @@ async function goOnline(p) {
 }
 
 /* ---- Espectador (só acompanha) ---- */
-let viewerGame = null, viewerUnsub = null, viewerErr = null, viewerCode = '';
+let viewerGame = null, viewerUnsub = null, viewerErr = null, viewerCode = '', viewerMe = null;
 function stopViewer() { if (viewerUnsub) { viewerUnsub(); viewerUnsub = null; } viewerGame = null; viewerErr = null; }
+function loadViewerMe(code) { try { return localStorage.getItem('pontinho:me:' + code) || null; } catch (_) { return null; } }
+function setViewerMe(code, id) { viewerMe = id; try { if (id) localStorage.setItem('pontinho:me:' + code, id); else localStorage.removeItem('pontinho:me:' + code); } catch (_) {} }
 function buildViewerGame(d, code) {
   const g = {
     id: 'viewer', data: d.data, valorPartida: d.valorPartida, valorBatida: d.valorBatida,
@@ -482,6 +484,7 @@ async function joinOnline(code) {
   code = (code || '').trim().toUpperCase();
   if (!code) { toast('Digite o código do jogo'); return; }
   viewerCode = code;
+  viewerMe = loadViewerMe(code);
   try {
     await initFirebase();
     stopViewer();
@@ -540,6 +543,43 @@ function renderViewer() {
   }
 
   const p = viewerGame;
+
+  // "Quem é você?" — se ainda não escolheu, ou o escolhido não existe mais
+  if (viewerMe && !p.players.some(pl => pl.id === viewerMe)) viewerMe = null;
+  if (!viewerMe) {
+    const pick = el(`<div class="card"><h2>Quem é você?</h2><p class="muted">Escolha seu nome para ver seus pontos e dinheiro em destaque.</p><div class="chips" id="me-chips"></div></div>`);
+    const chips = pick.querySelector('#me-chips');
+    p.players.forEach(pl => {
+      const c = el(`<button class="chip">${pl.nome}</button>`);
+      c.addEventListener('click', () => { setViewerMe(viewerCode, pl.id); render(); });
+      chips.appendChild(c);
+    });
+    root.appendChild(pick);
+  } else {
+    // Card pessoal grande
+    const me = p.players.find(pl => pl.id === viewerMe);
+    const pts = p.st.pontos[me.id];
+    const dinheiro = saldoExibido(p, me.id);
+    const ganhando = dinheiro >= 0;
+    const eliminado = !p.st.ativo[me.id];
+    const risco = !eliminado && pts >= p.limite;
+    const statusTxt = eliminado ? 'Fora da partida' : (risco ? `Passou de ${p.limite}!` : `Faltam ${p.limite - pts} pra ${p.limite}`);
+    const extras = [];
+    if (p.st.voltas[me.id]) extras.push(`↩ ${p.st.voltas[me.id]} volta(s)`);
+    if (p.st.pulgas[me.id]) extras.push(`🐛 ${p.st.pulgas[me.id]}`);
+    const card = el(`
+      <div class="me-card">
+        <div class="me-top">Você é <b>${me.nome}</b><button class="btn ghost sm" id="me-trocar">Trocar</button></div>
+        <div class="me-grid">
+          <div class="me-box"><div class="me-label">SEUS PONTOS</div><div class="me-num">${pts}</div><div class="me-sub">${statusTxt}</div></div>
+          <div class="me-box ${ganhando ? 'pos' : 'neg'}"><div class="me-label">${ganhando ? 'GANHANDO' : 'DEVENDO'}</div><div class="me-num">${money(Math.abs(dinheiro))}</div><div class="me-sub">${extras.join(' · ') || ' '}</div></div>
+        </div>
+        ${p.finalizada ? '' : '<div class="me-note">Parcial ao vivo — o valor da partida entra no encerramento.</div>'}
+      </div>`);
+    card.querySelector('#me-trocar').addEventListener('click', () => { setViewerMe(viewerCode, null); render(); });
+    root.appendChild(card);
+  }
+
   root.appendChild(el(`
     <div class="game-head">
       <div class="pill">Data <b>${formatDatePT(p.data)}</b></div>

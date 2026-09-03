@@ -90,6 +90,27 @@ input[type="text"], input[type="number"], input[type="date"] {
 .player-input-row input { flex: 1; }
 .player-input-row .rm { background: none; border: none; color: var(--red); font-size: 20px; padding: 4px 8px; }
 
+/* ---------- Card pessoal do espectador ---------- */
+.me-card {
+  background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow);
+  padding: 14px; margin-bottom: 12px;
+}
+.me-top { display: flex; align-items: center; justify-content: space-between; font-size: 15px; margin-bottom: 10px; }
+.me-top b { font-size: 18px; }
+.me-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.me-box {
+  border-radius: 12px; padding: 14px 10px; text-align: center;
+  background: #f4f4f2; border: 1px solid var(--line);
+}
+.me-box.pos { background: #e7f6ea; border-color: #bfe6c8; }
+.me-box.neg { background: #fdecec; border-color: #f3c9c9; }
+.me-label { font-size: 12px; font-weight: 800; letter-spacing: 1px; color: var(--muted); }
+.me-num { font-size: 44px; font-weight: 900; line-height: 1.1; margin: 4px 0; }
+.me-box.pos .me-num { color: var(--green-strong); }
+.me-box.neg .me-num { color: var(--red); }
+.me-sub { font-size: 12px; color: var(--muted); min-height: 15px; }
+.me-note { margin-top: 10px; font-size: 12px; color: var(--muted); text-align: center; }
+
 .zerou-badge {
   margin: 6px 0 0; font-weight: 800; color: #7a4b00;
   background: #ffd24d; display: inline-block; padding: 4px 12px; border-radius: 20px;
