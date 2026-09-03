@@ -956,8 +956,9 @@ function playerCardInner(p, id) {
     const gPos = g.total >= 0;
     geralHtml = `
       <div class="me-geral ${gPos ? 'pos' : 'neg'}">
-        <div><div class="me-label">FINANCEIRO GERAL DO DIA</div><div class="me-sub">${g.n} partida(s) · ${formatDatePT(p.data)}</div></div>
-        <b class="me-prev-num">${gPos ? '+' : '-'} ${money(Math.abs(g.total))}</b>
+        <div class="me-label">FINANCEIRO GERAL DO DIA</div>
+        <div class="me-geral-num">${gPos ? '+' : '-'} ${money(Math.abs(g.total))}</div>
+        <div class="me-sub">${g.n} partida(s) · ${formatDatePT(p.data)}</div>
       </div>`;
   }
   return `
