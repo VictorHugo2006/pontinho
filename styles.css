@@ -90,6 +90,11 @@ input[type="text"], input[type="number"], input[type="date"] {
 .player-input-row input { flex: 1; }
 .player-input-row .rm { background: none; border: none; color: var(--red); font-size: 20px; padding: 4px 8px; }
 
+.zerou-badge {
+  margin: 6px 0 0; font-weight: 800; color: #7a4b00;
+  background: #ffd24d; display: inline-block; padding: 4px 12px; border-radius: 20px;
+}
+
 /* ---------- Código de jogo online ---------- */
 .codebig {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

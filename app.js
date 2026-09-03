@@ -217,7 +217,7 @@ function recompute(p) {
   // Jogadores que entram no meio começam INATIVOS até o evento 'entrar'
   const lateIds = new Set((p.events || []).filter(e => e.type === 'entrar').map(e => e.playerId));
   const st = {
-    pontos: zero(0), saldo: zero(0),
+    pontos: zero(0), saldo: zero(0), saldoBatida: zero(0),
     ativo: Object.fromEntries(players.map(pl => [pl.id, !lateIds.has(pl.id)])),
     voltas: zero(0), pulgas: zero(0), fecho: {}, fechado: false,
   };
@@ -227,6 +227,7 @@ function recompute(p) {
   const eliminados = new Set(); // quem já caiu fora (para marcar X nas rodadas seguintes)
   p.finalizada = false;
   p.vencedorId = null;
+  p.zerou = false;
 
   const activeIds = () => players.filter(pl => st.ativo[pl.id]).map(pl => pl.id);
   const maxAtivosExcl = (excl) => {
@@ -247,7 +248,11 @@ function recompute(p) {
     } else if (ev.type === 'round') {
       const act = activeIds();
       if (ev.batedorId && st.ativo[ev.batedorId]) {
-        act.forEach(oid => { if (oid === ev.batedorId) return; st.saldo[ev.batedorId] += vB; st.saldo[oid] -= vB; });
+        act.forEach(oid => {
+          if (oid === ev.batedorId) return;
+          st.saldo[ev.batedorId] += vB; st.saldo[oid] -= vB;
+          st.saldoBatida[ev.batedorId] += vB; st.saldoBatida[oid] -= vB;
+        });
       }
       const pontosDelta = zero(0);
       act.forEach(id => {
@@ -287,16 +292,24 @@ function recompute(p) {
         rounds.push({ n: rounds.length + 1, evIndex, activeIds: activeIds(), foraAcum: [...eliminados], batedorId: null, pulgaIds: [...pending], foraIds: [], pontos: zero(0), voltas: [], estourou: [] });
         pending = [];
       }
+      // "Ganhou no zero": vencedor terminou com 0 pontos → tudo dobra (batida e partida)
+      const skunk = !!ev.vencedorId && st.pontos[ev.vencedorId] === 0;
       const fecho = {}; let total = 0;
       players.forEach(x => {
         if (x.id === ev.vencedorId) return;
-        const d = p.valorPartida * Math.pow(2, st.voltas[x.id]);
+        let d = p.valorPartida * Math.pow(2, st.voltas[x.id]); // partida × dobra das voltas
+        if (skunk) d *= 2;                                     // ganhou no zero: dobra a partida
         fecho[x.id] = -d; total += d;
       });
       if (ev.vencedorId) fecho[ev.vencedorId] = total;
+      if (skunk) {
+        // dobra a batida: aplica de novo o saldo de batida acumulado (soma zero se mantém)
+        players.forEach(x => { fecho[x.id] = (fecho[x.id] || 0) + st.saldoBatida[x.id]; });
+      }
       st.fecho = fecho; st.fechado = !!ev.vencedorId;
       p.vencedorId = ev.vencedorId || null;
       p.finalizada = true;
+      p.zerou = skunk;
     }
   });
 
@@ -546,7 +559,7 @@ function renderViewer() {
   }
   if (p.finalizada) {
     const v = p.players.find(pl => pl.id === p.vencedorId);
-    root.appendChild(el(`<div class="card" style="text-align:center;background:var(--green)"><h2>🏆 Vencedor: ${v ? v.nome : '—'}</h2></div>`));
+    root.appendChild(el(`<div class="card" style="text-align:center;background:var(--green)"><h2>🏆 Vencedor: ${v ? v.nome : '—'}</h2>${p.zerou ? '<p class="zerou-badge">🎯 Ganhou no ZERO — valor dobrado!</p>' : ''}</div>`));
   }
 }
 
@@ -835,6 +848,7 @@ function renderGame(p) {
     const card = el(`
       <div class="card" style="text-align:center;background:var(--green);">
         <h2>🏆 Vencedor: ${v ? v.nome : '—'}</h2>
+        ${p.zerou ? '<p class="zerou-badge">🎯 Ganhou no ZERO — valor dobrado!</p>' : ''}
         <p class="muted">Partida encerrada. Saldos finais (com o valor da partida) acima.</p>
         <button class="btn ghost sm" id="reabrir">↺ Reabrir partida</button>
       </div>`);
@@ -1380,7 +1394,7 @@ function histCard(p, numero) {
   const num = numero != null ? String(numero).padStart(2, '0') : '';
   const c = el(`<div class="hist-partida">
     <div class="h-title">${p.finalizada ? '✅' : '⏳'} ${num ? num + 'ª Partida' : 'Partida'} · ${money(p.valorPartida)}/${money(p.valorBatida)} — ${p.rounds.length} rodadas
-    ${venc ? `<span class="badge">🏆 ${venc.nome}</span>` : ''}</div>
+    ${venc ? `<span class="badge">🏆 ${venc.nome}</span>` : ''}${p.zerou ? '<span class="badge" style="background:#ffd24d">🎯 no ZERO (dobrou)</span>' : ''}</div>
   </div>`);
   c.appendChild(buildBoard(p));
   if (!p.finalizada) {
