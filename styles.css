@@ -65,6 +65,13 @@ input[type="text"], input[type="number"], input[type="date"] {
   width: 100%; padding: 12px; font-size: 16px; border: 1px solid var(--line);
   border-radius: 10px; background: #fff; color: var(--ink);
 }
+/* Campo de valor em Reais com prefixo R$ */
+.money-input { position: relative; }
+.money-input .prefix {
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  font-size: 16px; font-weight: 700; color: var(--muted); pointer-events: none;
+}
+.money-input input { padding-left: 38px; font-weight: 700; }
 
 /* ---------- Buttons ---------- */
 .btn {

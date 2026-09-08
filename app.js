@@ -42,6 +42,13 @@ let currentScreen = 'home';
 /* ------------------------------- Utils ----------------------------------- */
 const uid = () => Math.random().toString(36).slice(2, 9);
 const money = (n) => (n < 0 ? '-' : '') + Math.abs(n).toFixed(2).replace('.', ',');
+// Converte texto em Reais ("5,00", "1.234,50", "5") para número
+const parseBRL = (v) => {
+  let s = String(v == null ? '' : v).trim().replace(/[^\d.,]/g, '');
+  if (s.indexOf(',') > -1) s = s.replace(/\./g, '').replace(',', '.');
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+};
 const el = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstChild; };
 
 function todayISO() {
@@ -626,18 +633,22 @@ function renderSetup() {
   const card = el(`
     <div class="card">
       <h2>Nova partida</h2>
-      <div class="row wrap" style="gap:10px">
-        <label class="field" style="flex:1;min-width:140px">
-          <span>Data</span>
-          <input type="date" id="f-data" value="${todayISO()}">
-        </label>
-        <label class="field" style="flex:1;min-width:110px">
+      <label class="field">
+        <span>Data</span>
+        <input type="date" id="f-data" value="${todayISO()}">
+      </label>
+      <div class="row" style="gap:10px;margin-top:10px">
+        <label class="field" style="flex:1">
           <span>Valor partida</span>
-          <input type="number" id="f-partida" inputmode="decimal" step="0.5" value="5">
+          <div class="money-input"><span class="prefix">R$</span>
+            <input type="text" id="f-partida" inputmode="decimal" value="5,00">
+          </div>
         </label>
-        <label class="field" style="flex:1;min-width:110px">
+        <label class="field" style="flex:1">
           <span>Valor batida / pulga</span>
-          <input type="number" id="f-batida" inputmode="decimal" step="0.5" value="2">
+          <div class="money-input"><span class="prefix">R$</span>
+            <input type="text" id="f-batida" inputmode="decimal" value="2,00">
+          </div>
         </label>
       </div>
       <div class="field"><span>Quem vai jogar? (2 a 8) — toque para selecionar</span></div>
@@ -683,10 +694,16 @@ function renderSetup() {
   card.querySelector('#quick-add').addEventListener('click', quickAdd);
   card.querySelector('#quick-name').addEventListener('keydown', e => { if (e.key === 'Enter') quickAdd(); });
 
+  // Formata os campos de valor em Reais (ex.: 5 -> 5,00) ao sair do campo
+  ['#f-partida', '#f-batida'].forEach(sel => {
+    const inp = card.querySelector(sel);
+    inp.addEventListener('blur', () => { inp.value = money(parseBRL(inp.value)); });
+  });
+
   card.querySelector('#start-game').addEventListener('click', () => {
     const data = card.querySelector('#f-data').value || todayISO();
-    const valorPartida = Number(card.querySelector('#f-partida').value);
-    const valorBatida = Number(card.querySelector('#f-batida').value);
+    const valorPartida = parseBRL(card.querySelector('#f-partida').value);
+    const valorBatida = parseBRL(card.querySelector('#f-batida').value);
     const sel = state.jogadores.filter(j => setupSel.has(j.id));
     if (sel.length < 2) { toast('Selecione pelo menos 2 jogadores'); return; }
     if (!valorPartida || !valorBatida) { toast('Informe os valores'); return; }
