@@ -554,7 +554,7 @@ function renderViewer() {
   // "Quem é você?" — se ainda não escolheu, ou o escolhido não existe mais
   if (viewerMe && !p.players.some(pl => pl.id === viewerMe)) viewerMe = null;
   if (!viewerMe) {
-    const pick = el(`<div class="card"><h2>Quem é você?</h2><p class="muted">Escolha seu nome para ver seus pontos e dinheiro em destaque.</p><div class="chips" id="me-chips"></div></div>`);
+    const pick = el(`<div class="card"><h2>Quem é você?</h2><p class="muted">Escolha seu nome para ver seus pontos e dinheiro em destaque.</p><div class="chips chips-3" id="me-chips"></div></div>`);
     const chips = pick.querySelector('#me-chips');
     p.players.forEach(pl => {
       const c = el(`<button class="chip">${pl.nome}</button>`);
@@ -652,7 +652,7 @@ function renderSetup() {
         </label>
       </div>
       <div class="field"><span>Quem vai jogar? (2 a 8) — toque para selecionar</span></div>
-      <div class="chips" id="roster-chips"></div>
+      <div class="chips chips-3" id="roster-chips"></div>
       <div class="row" style="gap:8px;margin-top:10px">
         <input type="text" id="quick-name" placeholder="Cadastrar novo jogador">
         <button class="btn ghost sm" id="quick-add">+ Add</button>
@@ -782,8 +782,8 @@ function renderJogadores() {
         openNomeModal(j.nome, (novo) => { renameJogador(j.id, novo); render(); });
       });
       row.querySelector('[data-act="del"]').addEventListener('click', () => {
-        const msg = s.partidas ? `${j.nome} tem ${s.partidas} partida(s) no histórico. Excluir do cadastro? (o histórico das partidas é mantido)` : `Excluir ${j.nome}?`;
-        if (confirm(msg)) { removeJogador(j.id); render(); }
+        const msg = s.partidas ? `${j.nome} tem ${s.partidas} partida(s) no histórico. O histórico é mantido, só sai do cadastro.` : `Remover ${j.nome} do cadastro?`;
+        openConfirmModal({ title: `Excluir ${j.nome}?`, message: msg, okText: 'Excluir', onOk: () => { removeJogador(j.id); render(); } });
       });
       listCard.appendChild(row);
     });
@@ -1351,10 +1351,12 @@ function openRoundEditModal(p, evIndex) {
     closeModal(); toast('Rodada atualizada'); render();
   });
   body.querySelector('#del-round').addEventListener('click', () => {
-    if (confirm('Excluir esta rodada? O placar recalcula.')) {
-      excluirRound(p, evIndex);
-      closeModal(); toast('Rodada excluída'); render();
-    }
+    openConfirmModal({
+      title: 'Excluir rodada?',
+      message: 'A rodada será removida e o placar recalcula sozinho.',
+      okText: 'Excluir rodada',
+      onOk: () => { excluirRound(p, evIndex); toast('Rodada excluída'); render(); },
+    });
   });
   body.querySelector('.close').addEventListener('click', closeModal);
   showModal(body);
@@ -1509,11 +1511,14 @@ function renderHistory() {
   });
 
   root.appendChild(el('<div style="height:10px"></div>'));
-  const clear = el('<button class="btn ghost full">Apagar todo o histórico</button>');
+  const clear = el('<button class="btn danger-outline full">🗑 Apagar todo o histórico</button>');
   clear.addEventListener('click', () => {
-    if (confirm('Apagar TODAS as partidas? Esta ação não pode ser desfeita.')) {
-      state.partidas = []; DB.save(state); render();
-    }
+    openConfirmModal({
+      title: 'Apagar tudo?',
+      message: 'TODAS as partidas serão apagadas. Não dá pra desfazer. (Os jogadores cadastrados são mantidos.)',
+      okText: 'Apagar tudo',
+      onOk: () => { state.partidas = []; DB.save(state); render(); },
+    });
   });
   root.appendChild(clear);
 }
@@ -1531,12 +1536,14 @@ function histCard(p, numero) {
     cont.addEventListener('click', () => { currentScreen = 'home'; render(); });
     c.appendChild(cont);
   } else {
-    const del = el('<button class="btn ghost sm full" style="margin-top:10px">Excluir partida</button>');
+    const del = el('<button class="btn danger-outline sm full" style="margin-top:10px">🗑 Excluir partida</button>');
     del.addEventListener('click', () => {
-      if (confirm('Excluir esta partida?')) {
-        state.partidas = state.partidas.filter(x => x.id !== p.id);
-        DB.save(state); render();
-      }
+      openConfirmModal({
+        title: 'Excluir partida?',
+        message: 'Esta partida será apagada do histórico. Não dá pra desfazer.',
+        okText: 'Excluir esta partida',
+        onOk: () => { state.partidas = state.partidas.filter(x => x.id !== p.id); DB.save(state); render(); },
+      });
     });
     c.appendChild(del);
   }
@@ -1605,6 +1612,24 @@ function openNomeModal(nomeAtual, onOk) {
   body.querySelector('.close').addEventListener('click', closeModal);
   showModal(body);
   setTimeout(() => { input.focus(); input.select(); }, 60);
+}
+
+// Modal de confirmação bonito (substitui o confirm do navegador)
+function openConfirmModal({ title, message, okText, onOk }) {
+  const body = el(`
+    <div class="modal">
+      <div class="row"><h2>${title || 'Confirmar'}</h2><div class="spacer"></div>
+        <button class="btn ghost sm close">Fechar</button></div>
+      <p style="margin:6px 0 18px;font-size:15px">${message || ''}</p>
+      <div class="btnbar">
+        <button class="btn ghost" id="cm-cancel">Cancelar</button>
+        <button class="btn red" id="cm-ok">${okText || 'Excluir'}</button>
+      </div>
+    </div>`);
+  body.querySelector('#cm-ok').addEventListener('click', () => { closeModal(); onOk(); });
+  body.querySelector('#cm-cancel').addEventListener('click', closeModal);
+  body.querySelector('.close').addEventListener('click', closeModal);
+  showModal(body);
 }
 
 /* ------------------------------ Navegação -------------------------------- */

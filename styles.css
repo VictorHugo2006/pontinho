@@ -92,6 +92,8 @@ input.data-center { text-align: center; }
 .btn.green { background: var(--green-strong); color: #fff; }
 .btn.red { background: var(--red); color: #fff; }
 .btn.ghost { background: transparent; border: 1px solid var(--line); }
+.btn.danger-outline { background: #fff; color: var(--red); border: 1.5px solid #f0bcbc; font-weight: 800; }
+.btn.danger-outline:active { background: #fdecec; }
 .btn.sm { padding: 8px 12px; font-size: 13px; }
 .btn.full { width: 100%; }
 .btn:disabled { opacity: .45; }
@@ -156,6 +158,12 @@ input.data-center { text-align: center; }
 
 /* ---------- Chips de seleção ---------- */
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Grade de 3 colunas, retângulos do mesmo tamanho */
+.chips-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.chips-3 .chip {
+  padding: 14px 6px; text-align: center; border-radius: 12px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .chip {
   border: 1px solid var(--line); background: #fff; color: var(--ink);
   padding: 9px 14px; border-radius: 20px; font-weight: 700; font-size: 14px;
