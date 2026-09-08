@@ -635,16 +635,16 @@ function renderSetup() {
       <h2>Nova partida</h2>
       <label class="field">
         <span>Data</span>
-        <input type="date" id="f-data" value="${todayISO()}">
+        <input type="date" id="f-data" class="data-center" value="${todayISO()}">
       </label>
       <div class="row" style="gap:10px;margin-top:10px">
-        <label class="field" style="flex:1">
+        <label class="field field-valor" style="flex:1">
           <span>Valor partida</span>
           <div class="money-input"><span class="prefix">R$</span>
             <input type="text" id="f-partida" inputmode="decimal" value="5,00">
           </div>
         </label>
-        <label class="field" style="flex:1">
+        <label class="field field-valor" style="flex:1">
           <span>Valor batida / pulga</span>
           <div class="money-input"><span class="prefix">R$</span>
             <input type="text" id="f-batida" inputmode="decimal" value="2,00">

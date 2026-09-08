@@ -65,13 +65,21 @@ input[type="text"], input[type="number"], input[type="date"] {
   width: 100%; padding: 12px; font-size: 16px; border: 1px solid var(--line);
   border-radius: 10px; background: #fff; color: var(--ink);
 }
-/* Campo de valor em Reais com prefixo R$ */
+/* Data centralizada */
+input.data-center { text-align: center; }
+
+/* Campo de valor em Reais com prefixo R$ (em destaque) */
+.field-valor span { color: var(--ink); font-weight: 800; }
 .money-input { position: relative; }
 .money-input .prefix {
   position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
-  font-size: 16px; font-weight: 700; color: var(--muted); pointer-events: none;
+  font-size: 16px; font-weight: 800; color: var(--green-strong); pointer-events: none;
 }
-.money-input input { padding-left: 38px; font-weight: 700; }
+.money-input input {
+  padding-left: 40px; font-weight: 800; font-size: 20px;
+  background: var(--yellow-soft); border: 2px solid var(--yellow);
+  color: var(--ink);
+}
 
 /* ---------- Buttons ---------- */
 .btn {
