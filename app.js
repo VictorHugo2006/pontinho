@@ -651,7 +651,7 @@ function renderSetup() {
           </div>
         </label>
       </div>
-      <div class="field"><span>Quem vai jogar? (2 a 8) — toque para selecionar</span></div>
+      <div class="field"><span style="white-space:nowrap">Selecione quem vai jogar (2 a 8).</span></div>
       <div class="chips chips-3" id="roster-chips"></div>
       <div class="row" style="gap:8px;margin-top:10px">
         <input type="text" id="quick-name" placeholder="Cadastrar novo jogador">
