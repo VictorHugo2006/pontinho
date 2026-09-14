@@ -16,12 +16,16 @@ const DB = {
       const data = JSON.parse(raw);
       if (!data.partidas) data.partidas = [];
       if (!data.jogadores) data.jogadores = [];
-      // Migração leve p/ campos novos
+      // Remove partidas quebradas (dados inválidos) para o app não travar
+      data.partidas = data.partidas.filter(partidaValida);
+      // Migração leve p/ campos novos (defensiva)
       data.partidas.forEach(p => {
         if (!p.pendingPulgas) p.pendingPulgas = [];
         if (!p.events) p.events = [];
+        if (!p.st) p.st = {};
         if (!p.st.fecho) p.st.fecho = {};
         if (p.st.fechado === undefined) p.st.fechado = false;
+        if (!Array.isArray(p.rounds)) p.rounds = [];
         p.rounds.forEach(r => { if (!r.voltas) r.voltas = []; });
       });
       return data;
@@ -41,7 +45,15 @@ let currentScreen = 'home';
 
 /* ------------------------------- Utils ----------------------------------- */
 const uid = () => Math.random().toString(36).slice(2, 9);
-const money = (n) => (n < 0 ? '-' : '') + Math.abs(n).toFixed(2).replace('.', ',');
+const money = (n) => { if (!Number.isFinite(n)) n = 0; return (n < 0 ? '-' : '') + Math.abs(n).toFixed(2).replace('.', ','); };
+// Uma partida é válida se tem data, valores numéricos e pelo menos 2 jogadores
+function partidaValida(p) {
+  return !!p && typeof p === 'object'
+    && typeof p.data === 'string' && p.data.indexOf('-') > -1
+    && Number.isFinite(p.valorPartida) && Number.isFinite(p.valorBatida)
+    && Array.isArray(p.players) && p.players.length >= 2
+    && Array.isArray(p.events);
+}
 // Converte texto em Reais ("5,00", "1.234,50", "5") para número
 const parseBRL = (v) => {
   let s = String(v == null ? '' : v).trim().replace(/[^\d.,]/g, '');
@@ -57,6 +69,7 @@ function todayISO() {
   return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
 }
 function formatDatePT(iso) {
+  if (!iso || typeof iso !== 'string' || iso.indexOf('-') < 0) return '—';
   const [y, m, d] = iso.split('-');
   return `${d}/${m}/${y}`;
 }
@@ -1702,9 +1715,10 @@ function cloudDeletePartida(id) {
   if (!cloudReady) return;
   fbDB.collection('partidas').doc(id).delete().catch(() => {});
 }
-function partidaFromCloud(d) {
+function partidaFromCloud(doc) {
+  const d = doc.data ? doc.data() : doc; // aceita snapshot do Firestore ou objeto puro
   const p = {
-    id: d.id, data: d.data, valorPartida: d.valorPartida, valorBatida: d.valorBatida,
+    id: doc.id, data: d.data, valorPartida: d.valorPartida, valorBatida: d.valorBatida,
     limite: d.limite || 100, players: d.players || [], events: d.events || [],
     st: {}, rounds: [], pendingPulgas: [], finalizada: false, vencedorId: null,
   };
@@ -1720,12 +1734,12 @@ function mergeCloudRoster(docs) {
   cloudMaybeRender(['home', 'players', 'history', 'dinheiro']);
 }
 function mergeCloudPartidas(docs) {
-  const cloud = docs.map(partidaFromCloud);
+  const cloud = docs.map(partidaFromCloud).filter(partidaValida);
   const cloudIds = new Set(cloud.map(p => p.id));
-  const ongoing = state.partidas.filter(p => !p.finalizada && !cloudIds.has(p.id)); // jogo local em andamento
+  const ongoing = state.partidas.filter(p => !p.finalizada && !cloudIds.has(p.id) && partidaValida(p)); // jogo local em andamento
   state.partidas = [...ongoing, ...cloud];
   DB.save(state);
-  cloudMaybeRender(['history', 'dinheiro']);
+  cloudMaybeRender(['history', 'dinheiro', 'home']);
 }
 async function initCloudSync() {
   try { await initFirebase(); } catch (e) { console.warn('Nuvem indisponível (offline?)', e); return; }
