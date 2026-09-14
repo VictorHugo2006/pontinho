@@ -129,20 +129,22 @@ function addJogador(nome) {
   if (state.jogadores.some(j => j.nome.toLowerCase() === nome.toLowerCase())) {
     toast('Já existe um jogador com esse nome'); return null;
   }
-  const j = { id: uid(), nome };
+  const j = { id: uid(), nome, criadoEm: Date.now() };
   state.jogadores.push(j);
   DB.save(state);
+  cloudSetPlayer(j);
   return j;
 }
 function renameJogador(id, nome) {
   nome = (nome || '').trim();
   if (!nome) return;
   const j = state.jogadores.find(x => x.id === id);
-  if (j) { j.nome = nome; DB.save(state); }
+  if (j) { j.nome = nome; DB.save(state); cloudSetPlayer(j); }
 }
 function removeJogador(id) {
   state.jogadores = state.jogadores.filter(x => x.id !== id);
   DB.save(state);
+  cloudDeletePlayer(id);
 }
 function nomeJogador(id, fallback) {
   const j = state.jogadores.find(x => x.id === id);
@@ -435,6 +437,11 @@ function toastOnce(msg) { const n = Date.now(); if (n - _toastTs > 4000) { _toas
 function persist(p) {
   DB.save(state);
   if (p && p.online && p.online.role === 'host') syncUp(p);
+  // Histórico compartilhado: partida encerrada vai pra nuvem; se reaberta, sai de lá
+  if (p && p.id !== 'viewer') {
+    if (p.finalizada) cloudSetPartida(p);
+    else cloudDeletePartida(p.id);
+  }
 }
 
 function gameDocData(p, uid) {
@@ -1517,7 +1524,7 @@ function renderHistory() {
       title: 'Apagar tudo?',
       message: 'TODAS as partidas serão apagadas. Não dá pra desfazer. (Os jogadores cadastrados são mantidos.)',
       okText: 'Apagar tudo',
-      onOk: () => { state.partidas = []; DB.save(state); render(); },
+      onOk: () => { const ids = state.partidas.filter(x => x.finalizada).map(x => x.id); state.partidas = state.partidas.filter(x => !x.finalizada); DB.save(state); ids.forEach(cloudDeletePartida); render(); },
     });
   });
   root.appendChild(clear);
@@ -1542,7 +1549,7 @@ function histCard(p, numero) {
         title: 'Excluir partida?',
         message: 'Esta partida será apagada do histórico. Não dá pra desfazer.',
         okText: 'Excluir esta partida',
-        onOk: () => { state.partidas = state.partidas.filter(x => x.id !== p.id); DB.save(state); render(); },
+        onOk: () => { state.partidas = state.partidas.filter(x => x.id !== p.id); DB.save(state); cloudDeletePartida(p.id); render(); },
       });
     });
     c.appendChild(del);
@@ -1632,6 +1639,85 @@ function openConfirmModal({ title, message, okText, onOk }) {
   showModal(body);
 }
 
+/* ============= Histórico + cadastro compartilhados (nuvem) ============== */
+let cloudReady = false;
+
+function cloudMaybeRender(screens) {
+  if (!screens.includes(currentScreen)) return;
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA')) return; // não interromper digitação
+  render();
+}
+
+function cloudSetPlayer(j) {
+  if (!cloudReady) return;
+  fbDB.collection('roster').doc(j.id).set({ nome: j.nome, criadoEm: j.criadoEm || Date.now() }, { merge: true }).catch(e => console.warn('cloud player', e));
+}
+function cloudDeletePlayer(id) {
+  if (!cloudReady) return;
+  fbDB.collection('roster').doc(id).delete().catch(() => {});
+}
+function partidaToCloud(p) {
+  return {
+    id: p.id, data: p.data, valorPartida: p.valorPartida, valorBatida: p.valorBatida,
+    limite: p.limite || 100,
+    players: p.players.map(pl => ({ id: pl.id, nome: pl.nome })),
+    events: JSON.parse(JSON.stringify(p.events || [])),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  };
+}
+function cloudSetPartida(p) {
+  if (!cloudReady) return;
+  fbDB.collection('partidas').doc(p.id).set(partidaToCloud(p)).catch(e => console.warn('cloud partida', e));
+}
+function cloudDeletePartida(id) {
+  if (!cloudReady) return;
+  fbDB.collection('partidas').doc(id).delete().catch(() => {});
+}
+function partidaFromCloud(d) {
+  const p = {
+    id: d.id, data: d.data, valorPartida: d.valorPartida, valorBatida: d.valorBatida,
+    limite: d.limite || 100, players: d.players || [], events: d.events || [],
+    st: {}, rounds: [], pendingPulgas: [], finalizada: false, vencedorId: null,
+  };
+  recompute(p);
+  return p;
+}
+function mergeCloudRoster(docs) {
+  const cloud = docs.map(d => ({ id: d.id, nome: d.data().nome, criadoEm: d.data().criadoEm || 0 }));
+  const cloudIds = new Set(cloud.map(j => j.id));
+  const localOnly = state.jogadores.filter(j => !cloudIds.has(j.id)); // ainda não subiu (offline)
+  state.jogadores = [...cloud, ...localOnly].sort((a, b) => (a.criadoEm || 0) - (b.criadoEm || 0) || String(a.nome).localeCompare(b.nome));
+  DB.save(state);
+  cloudMaybeRender(['home', 'players', 'history', 'dinheiro']);
+}
+function mergeCloudPartidas(docs) {
+  const cloud = docs.map(partidaFromCloud);
+  const cloudIds = new Set(cloud.map(p => p.id));
+  const ongoing = state.partidas.filter(p => !p.finalizada && !cloudIds.has(p.id)); // jogo local em andamento
+  state.partidas = [...ongoing, ...cloud];
+  DB.save(state);
+  cloudMaybeRender(['history', 'dinheiro']);
+}
+async function initCloudSync() {
+  try { await initFirebase(); } catch (e) { console.warn('Nuvem indisponível (offline?)', e); return; }
+  cloudReady = true;
+  try {
+    // Semeia dados locais que ainda não estão na nuvem (ex.: seu cadastro/partidas)
+    const [rSnap, pSnap] = await Promise.all([
+      fbDB.collection('roster').get(),
+      fbDB.collection('partidas').get(),
+    ]);
+    const rIds = new Set(rSnap.docs.map(d => d.id));
+    const pIds = new Set(pSnap.docs.map(d => d.id));
+    state.jogadores.forEach(j => { if (!rIds.has(j.id)) cloudSetPlayer(j); });
+    state.partidas.filter(p => p.finalizada && p.id !== 'viewer' && !pIds.has(p.id)).forEach(cloudSetPartida);
+    // Escuta mudanças em tempo real
+    fbDB.collection('roster').onSnapshot(s => mergeCloudRoster(s.docs), e => console.warn('roster snap', e));
+    fbDB.collection('partidas').onSnapshot(s => mergeCloudPartidas(s.docs), e => console.warn('partidas snap', e));
+  } catch (e) { console.warn('sync init', e); }
+}
+
 /* ------------------------------ Navegação -------------------------------- */
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
@@ -1651,6 +1737,9 @@ function checkDeepLink() {
 window.addEventListener('hashchange', checkDeepLink);
 
 if (!checkDeepLink()) render();
+
+// Sincroniza cadastro + histórico com a nuvem (todos os aparelhos veem o mesmo)
+initCloudSync();
 
 /* ------------------------------ PWA -------------------------------------- */
 if ('serviceWorker' in navigator) {
