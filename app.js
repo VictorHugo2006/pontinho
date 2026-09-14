@@ -627,15 +627,15 @@ function renderViewer() {
 }
 
 /* ------------------------------ Setup ------------------------------------ */
-let setupSel = new Set(); // ids dos jogadores selecionados p/ a próxima partida
+let setupSel = []; // ids selecionados NA ORDEM (ordem da mesa)
 
 function renderSetup() {
   const root = appRoot();
   root.innerHTML = '';
   const oldBar = document.querySelector('.fab-bar'); if (oldBar) oldBar.remove();
 
-  // Mantém na seleção só ids que ainda existem no cadastro
-  setupSel = new Set([...setupSel].filter(id => state.jogadores.some(j => j.id === id)));
+  // Mantém na seleção só ids que ainda existem no cadastro (preservando a ordem)
+  setupSel = setupSel.filter(id => state.jogadores.some(j => j.id === id));
 
   const card = el(`
     <div class="card">
@@ -678,13 +678,14 @@ function renderSetup() {
       return;
     }
     state.jogadores.forEach(j => {
-      const on = setupSel.has(j.id);
-      const chip = el(`<button class="chip ${on ? 'on' : ''}">${j.nome}</button>`);
+      const idx = setupSel.indexOf(j.id);
+      const on = idx > -1;
+      const chip = el(`<button class="chip ${on ? 'on' : ''}">${on ? `<b class="ord">${idx + 1}</b>` : ''}${j.nome}</button>`);
       chip.addEventListener('click', () => {
-        if (on) setupSel.delete(j.id);
+        if (on) setupSel = setupSel.filter(x => x !== j.id);
         else {
-          if (setupSel.size >= 8) { toast('Máximo de 8 jogadores'); return; }
-          setupSel.add(j.id);
+          if (setupSel.length >= 8) { toast('Máximo de 8 jogadores'); return; }
+          setupSel.push(j.id);
         }
         drawChips();
       });
@@ -696,7 +697,7 @@ function renderSetup() {
   function quickAdd() {
     const inp = card.querySelector('#quick-name');
     const j = addJogador(inp.value);
-    if (j) { setupSel.add(j.id); inp.value = ''; drawChips(); inp.focus(); }
+    if (j) { setupSel.push(j.id); inp.value = ''; drawChips(); inp.focus(); }
   }
   card.querySelector('#quick-add').addEventListener('click', quickAdd);
   card.querySelector('#quick-name').addEventListener('keydown', e => { if (e.key === 'Enter') quickAdd(); });
@@ -711,13 +712,14 @@ function renderSetup() {
     const data = card.querySelector('#f-data').value || todayISO();
     const valorPartida = parseBRL(card.querySelector('#f-partida').value);
     const valorBatida = parseBRL(card.querySelector('#f-batida').value);
-    const sel = state.jogadores.filter(j => setupSel.has(j.id));
+    // Na ORDEM de seleção (ordem da mesa)
+    const sel = setupSel.map(id => state.jogadores.find(j => j.id === id)).filter(Boolean);
     if (sel.length < 2) { toast('Selecione pelo menos 2 jogadores'); return; }
     if (!valorPartida || !valorBatida) { toast('Informe os valores'); return; }
     const p = newPartida({ data, valorPartida, valorBatida, players: sel });
     state.partidas.push(p);
     DB.save(state);
-    setupSel = new Set();
+    setupSel = [];
     render();
   });
 
