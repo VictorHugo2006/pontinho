@@ -380,6 +380,17 @@ function excluirRound(p, evIndex) {
 
 function doVolta(p, playerId) { pushEvent(p, { type: 'volta', playerId }); }
 
+// Um jogador que caiu fora pode VOLTAR só antes de lançar a próxima rodada
+function podeVoltarFora(p, playerId) {
+  if (!p || p.finalizada || p.st.ativo[playerId]) return false;
+  let lastRound = -1, lastElim = -1;
+  (p.events || []).forEach((e, i) => {
+    if (e.type === 'round') lastRound = i;
+    if (e.type === 'eliminar' && e.playerId === playerId) lastElim = i;
+  });
+  return lastElim > lastRound; // caiu fora depois da última rodada = antes da próxima
+}
+
 function eliminar(p, playerId) {
   p.events.push({ type: 'eliminar', playerId });
   recompute(p);
@@ -1006,13 +1017,28 @@ function playerCardInner(p, id) {
 function openPlayerCard(p, id) {
   const pl = p.players.find(x => x.id === id);
   if (!pl) return;
+  // Voltar: só no jogo ao vivo de quem marca, se o jogador caiu fora antes da próxima rodada
+  const ehEspectador = p.online && p.online.role === 'viewer';
+  const mostrarVoltar = !ehEspectador && podeVoltarFora(p, id);
   const body = el(`
     <div class="modal">
       <div class="row"><h2>${pl.nome}</h2><div class="spacer"></div>
         <button class="btn ghost sm close">Fechar</button></div>
       ${playerCardInner(p, id)}
+      ${mostrarVoltar ? `
+        <div style="height:14px"></div>
+        <button class="btn yellow full" id="voltar-btn">↩ Voltar para a partida (com volta)</button>
+        <p class="muted" style="text-align:center;margin-top:6px">Ele volta com os pontos do maior jogador e paga a volta (dobrado). Só dá pra fazer antes da próxima rodada.</p>
+      ` : ''}
     </div>`);
   body.querySelector('.close').addEventListener('click', closeModal);
+  const vb = body.querySelector('#voltar-btn');
+  if (vb) vb.addEventListener('click', () => {
+    doVolta(p, id);
+    closeModal();
+    toast(`${pl.nome} voltou para a partida`);
+    render();
+  });
   showModal(body);
 }
 
