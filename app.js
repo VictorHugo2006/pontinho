@@ -170,10 +170,11 @@ function computeStats() {
   const stats = {};
   state.partidas.forEach(p => {
     p.players.forEach(pl => {
-      const s = stats[pl.id] || (stats[pl.id] = { partidas: 0, vitorias: 0, pulgas: 0, saldo: 0 });
+      const s = stats[pl.id] || (stats[pl.id] = { partidas: 0, vitorias: 0, pulgas: 0, batidas: 0, saldo: 0 });
       s.partidas += 1;
       if (p.vencedorId === pl.id) s.vitorias += 1;
       s.pulgas += p.st.pulgas[pl.id] || 0;
+      s.batidas += (p.events || []).filter(e => e.type === 'round' && e.batedorId === pl.id).length;
       if (p.finalizada) s.saldo += saldoExibido(p, pl.id);
     });
   });
@@ -781,7 +782,7 @@ function renderSetup() {
       chips.appendChild(el('<p class="muted">Nenhum jogador cadastrado. Adicione abaixo ou na aba <b>Jogadores</b>.</p>'));
       return;
     }
-    state.jogadores.forEach(j => {
+    state.jogadores.slice().sort((a, b) => String(a.nome).localeCompare(b.nome, 'pt')).forEach(j => {
       const idx = setupSel.indexOf(j.id);
       const on = idx > -1;
       const chip = el(`<button class="chip ${on ? 'on' : ''}">${on ? `<b class="ord">${idx + 1}</b>` : ''}${j.nome}</button>`);
@@ -955,7 +956,7 @@ function renderGame(p) {
     const toolbar = el(`
       <div class="row" style="gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
         <button class="btn ghost sm" id="add-player-btn">+ Jogador</button>
-        <button class="btn ghost sm" id="livro-btn">🤝 Livro</button>
+        <button class="btn ghost sm" id="livro-btn">🤝 Acordo</button>
         <span class="muted" style="font-size:12px">Toque no <b>nome</b> p/ ver pontos e $ · no <b>Rx&nbsp;✎</b> p/ editar</span>
       </div>`);
     toolbar.querySelector('#add-player-btn').addEventListener('click', () => openAddPlayerModal(p));
@@ -1193,8 +1194,8 @@ function roundMark(p, r, playerId) {
     if (r.foraAcum && r.foraAcum.includes(playerId)) return '<span class="round-mark sign">X</span>';
     return '';
   }
-  if (r.batedorId === playerId) return '<span class="round-mark sign">–</span>';
   const isPulga = (r.pulgaIds || []).includes(playerId);
+  if (r.batedorId === playerId) return isPulga ? '<span class="round-mark">🐛 <b class="sign">–</b></span>' : '<span class="round-mark sign">–</span>';
   if ((r.foraIds || []).includes(playerId)) return '<span class="round-mark sign">X</span>';
   const v = r.pontos[playerId];
   const base = (v || v === 0) ? `${v}` : '';
@@ -1294,9 +1295,8 @@ function openLivroModal(p) {
 
   const body = el(`
     <div class="modal">
-      <div class="row"><h2>🤝 Livro / Acordo</h2><div class="spacer"></div>
+      <div class="row"><h2>🤝 Acordo / Livre</h2><div class="spacer"></div>
         <button class="btn ghost sm close">Fechar</button></div>
-      <p class="muted">Quem <b>livra</b> paga quem foi <b>livrado</b>. Livro 1 = ${money(quick[0])} · 2 = ${money(quick[1])} · 3 = ${money(quick[2])} · 4 = ${money(quick[3])}.</p>
       <div class="field"><span>Quem livra (paga):</span></div>
       <div class="chips chips-3" id="livro-payer"></div>
       <div id="livro-recebe"></div>
@@ -1580,6 +1580,7 @@ function openFinishModal(p) {
 
 /* ------------------------------ Dinheiro --------------------------------- */
 let dinheiroPeriodo = 'dia'; // dia | semana | mes | ano | tudo
+let dinheiroSort = 'saldo';  // saldo | pulgas | batidas | vitorias | partidas
 function inPeriodo(dataISO, periodo) {
   const hoje = todayISO();
   if (periodo === 'tudo') return true;
@@ -1610,15 +1611,23 @@ function renderDinheiro() {
   // Ranking do período
   const agg = {};
   parts.forEach(p => p.players.forEach(pl => {
-    const s = agg[pl.id] || (agg[pl.id] = { nome: nomeJogador(pl.id, pl.nome), saldo: 0, pulgas: 0, vitorias: 0, partidas: 0 });
+    const s = agg[pl.id] || (agg[pl.id] = { nome: nomeJogador(pl.id, pl.nome), saldo: 0, pulgas: 0, batidas: 0, vitorias: 0, partidas: 0 });
     s.saldo += saldoExibido(p, pl.id);
     s.pulgas += p.st.pulgas[pl.id] || 0;
+    s.batidas += (p.events || []).filter(e => e.type === 'round' && e.batedorId === pl.id).length;
     if (p.vencedorId === pl.id) s.vitorias += 1;
     s.partidas += 1;
   }));
-  const rank = Object.values(agg).sort((a, b) => b.saldo - a.saldo);
+  const rank = Object.values(agg).sort((a, b) => (b[dinheiroSort] - a[dinheiroSort]) || (b.saldo - a.saldo));
 
   const lb = el('<div class="card"><h2>🏆 Ranking do período</h2></div>');
+  // Botões de ordenação
+  const ordena = [['saldo', 'Valor'], ['pulgas', 'Pulga'], ['batidas', 'Batidas'], ['vitorias', 'Vitórias'], ['partidas', 'Partidas']];
+  const sortBar = el(`<div class="chips" style="margin:2px 0 12px">
+    ${ordena.map(([k, l]) => `<button class="chip ${dinheiroSort === k ? 'on' : ''}" data-s="${k}">${l}</button>`).join('')}
+  </div>`);
+  sortBar.querySelectorAll('[data-s]').forEach(b => b.addEventListener('click', () => { dinheiroSort = b.dataset.s; render(); }));
+  lb.appendChild(sortBar);
   if (!rank.length) {
     lb.appendChild(el('<p class="muted">Nenhuma partida encerrada neste período.</p>'));
   } else {
@@ -1629,7 +1638,7 @@ function renderDinheiro() {
         <div class="jog-row">
           <div class="jog-info">
             <div class="jog-name">${medal} ${s.nome}</div>
-            <div class="muted jog-stats">${s.partidas} partidas · 🏆 ${s.vitorias} · 🐛 ${s.pulgas}</div>
+            <div class="muted jog-stats">${s.partidas} partidas · 🏆 ${s.vitorias} · 🐛 ${s.pulgas} · bat ${s.batidas}</div>
           </div>
           <div class="money ${cls}" style="font-weight:800;font-size:17px">${money(s.saldo)}</div>
         </div>`));
