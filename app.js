@@ -6,7 +6,7 @@
 'use strict';
 
 /* ----------------------------- Persistência ------------------------------ */
-const APP_VERSION = 'v31';
+const APP_VERSION = 'v32';
 const STORE_KEY = 'pontinho:v1';
 
 const DB = {
@@ -572,11 +572,12 @@ function render() {
   if (currentScreen === 'dinheiro') return renderDinheiro();
   if (currentScreen === 'players') return renderJogadores();
   // Aba Jogo:
-  const p = currentPartida();
-  if (p) return renderGame(p);                       // eu estou marcando (dono)
-  if (liveDoc && liveDoc.ownerUid !== myUid)         // outro está marcando → assisto ao vivo
-    return renderLiveViewer(buildLivePartida(liveDoc));
-  return renderSetup();                              // ninguém marcando → nova partida
+  const local = currentPartida();
+  // Sou o dono se tenho jogo local E (não há ao vivo de ninguém OU o ao vivo é meu)
+  const souDono = local && (!liveDoc || liveDoc.ownerUid === myUid);
+  if (souDono) return renderGame(local);                          // estou marcando
+  if (liveDoc) return renderLiveViewer(buildLivePartida(liveDoc)); // outro marca → assisto
+  return renderSetup();                                            // ninguém marcando → nova partida
 }
 
 /* ------------- Assistir ao vivo (aba Jogo, sem código) ------------------- */

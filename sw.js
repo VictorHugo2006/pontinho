@@ -1,12 +1,12 @@
 /* Service Worker do Pontinho — cache para uso offline.
    Ao atualizar arquivos, suba o número da versão (mantenha igual ao ?v= do index.html). */
-const CACHE = 'pontinho-v31';
+const CACHE = 'pontinho-v32';
 const ASSETS = [
   './',
   './index.html',
-  './styles.css?v=31',
-  './firebase-config.js?v=31',
-  './app.js?v=31',
+  './styles.css?v=32',
+  './firebase-config.js?v=32',
+  './app.js?v=32',
   './manifest.json',
   './icon.svg',
 ];
