@@ -6,6 +6,7 @@
 'use strict';
 
 /* ----------------------------- Persistência ------------------------------ */
+const APP_VERSION = 'v31';
 const STORE_KEY = 'pontinho:v1';
 
 const DB = {
@@ -111,6 +112,7 @@ function newPartida({ data, valorPartida, valorBatida, players: sel }) {
   const zero = (v) => Object.fromEntries(players.map(pl => [pl.id, v]));
   return {
     id: uid(),
+    criadoEm: Date.now(),   // para numerar as partidas na ordem certa
     data,
     valorPartida,
     valorBatida,
@@ -267,6 +269,13 @@ function recompute(p) {
         st.pulgas[pid] += 1;
         pending.push(pid);
       });
+    } else if (ev.type === 'acordo') {
+      // "Livro": quem livra (from) PAGA quem foi livrado (to). Soma zero, não dobra.
+      const v = Number(ev.valor) || 0;
+      if (ev.fromId && ev.toId && st.saldo[ev.fromId] != null && st.saldo[ev.toId] != null) {
+        st.saldo[ev.fromId] -= v;
+        st.saldo[ev.toId] += v;
+      }
     } else if (ev.type === 'round') {
       const act = activeIds();
       if (ev.batedorId && st.ativo[ev.batedorId]) {
@@ -355,6 +364,16 @@ function undoLast(p) {
 
 /* ----------------------- Ações (criam eventos) --------------------------- */
 function registrarPulga(p, ids) { pushEvent(p, { type: 'pulga', playerIds: ids }); }
+
+// "Livro"/acordo: quem livra paga quem foi livrado. deals = [{fromId, toId, valor}]
+function registrarAcordo(p, deals) {
+  (deals || []).forEach(d => {
+    if (d.fromId && d.toId && d.fromId !== d.toId && Number(d.valor) > 0) {
+      p.events.push({ type: 'acordo', fromId: d.fromId, toId: d.toId, valor: Number(d.valor) });
+    }
+  });
+  recompute(p); persist(p);
+}
 
 // Adiciona um jogador no meio da partida
 function entrarJogador(p, jogador) {
@@ -457,14 +476,18 @@ function initFirebase() {
 let _toastTs = 0;
 function toastOnce(msg) { const n = Date.now(); if (n - _toastTs > 4000) { _toastTs = n; toast(msg); } }
 
-// Salva local e, se for o dono de um jogo online, envia para a nuvem
+// Salva local e sincroniza com a nuvem
 function persist(p) {
   DB.save(state);
-  if (p && p.online && p.online.role === 'host') syncUp(p);
-  // Histórico compartilhado: partida encerrada vai pra nuvem; se reaberta, sai de lá
-  if (p && p.id !== 'viewer') {
-    if (p.finalizada) cloudSetPartida(p);
-    else cloudDeletePartida(p.id);
+  if (p && p.id !== 'viewer' && p.id !== 'live') {
+    if (p.finalizada) {
+      // Encerrou: vai pro histórico compartilhado e sai do "ao vivo"
+      cloudSetPartida(p);
+      cloudClearLive();
+    } else {
+      // Em andamento: vira/atualiza o "jogo ao vivo" pra todos verem
+      cloudSetLive(p);
+    }
   }
 }
 
@@ -544,17 +567,73 @@ const appRoot = () => document.getElementById('app');
 
 function render() {
   document.querySelectorAll('.tab').forEach(t =>
-    t.classList.toggle('active', t.dataset.screen === currentScreen && currentScreen !== 'viewer'));
-  if (currentScreen === 'viewer') return renderViewer();
+    t.classList.toggle('active', t.dataset.screen === currentScreen));
   if (currentScreen === 'history') return renderHistory();
   if (currentScreen === 'dinheiro') return renderDinheiro();
   if (currentScreen === 'players') return renderJogadores();
+  // Aba Jogo:
   const p = currentPartida();
-  if (!p) return renderSetup();
-  return renderGame(p);
+  if (p) return renderGame(p);                       // eu estou marcando (dono)
+  if (liveDoc && liveDoc.ownerUid !== myUid)         // outro está marcando → assisto ao vivo
+    return renderLiveViewer(buildLivePartida(liveDoc));
+  return renderSetup();                              // ninguém marcando → nova partida
 }
 
-/* --------------------------- Tela do espectador -------------------------- */
+/* ------------- Assistir ao vivo (aba Jogo, sem código) ------------------- */
+function renderLiveViewer(p) {
+  const root = appRoot();
+  root.innerHTML = '';
+  const ob = document.querySelector('.fab-bar'); if (ob) ob.remove();
+
+  root.appendChild(el(`
+    <div class="card" style="display:flex;align-items:center;gap:10px;background:#ffecec">
+      <span class="live-dot"></span>
+      <span><b>AO VIVO</b> — a partida está sendo marcada. Você acompanha em tempo real.</span>
+    </div>`));
+
+  // "Quem é você?" (fica salvo) → card pessoal em destaque
+  if (viewerMe == null) viewerMe = loadViewerMe('live');
+  if (viewerMe && !p.players.some(pl => pl.id === viewerMe)) viewerMe = null;
+  if (!viewerMe) {
+    const pick = el(`<div class="card"><h2>Quem é você?</h2><p class="muted">Escolha seu nome para ver seus pontos e dinheiro em destaque.</p><div class="chips chips-3" id="me-chips"></div></div>`);
+    const chips = pick.querySelector('#me-chips');
+    p.players.forEach(pl => {
+      const c = el(`<button class="chip">${pl.nome}</button>`);
+      c.addEventListener('click', () => { setViewerMe('live', pl.id); render(); });
+      chips.appendChild(c);
+    });
+    root.appendChild(pick);
+  } else {
+    const me = p.players.find(pl => pl.id === viewerMe);
+    const card = el(`
+      <div class="me-card">
+        <div class="me-top">Você é <b>${me.nome}</b><button class="btn ghost sm" id="me-trocar">Trocar</button></div>
+        ${playerCardInner(p, me.id)}
+      </div>`);
+    card.querySelector('#me-trocar').addEventListener('click', () => { setViewerMe('live', null); render(); });
+    root.appendChild(card);
+  }
+
+  root.appendChild(el(`
+    <div class="game-head">
+      <div class="pill">Data <b>${formatDatePT(p.data)}</b></div>
+      <div class="pill">Partida <b>${money(p.valorPartida)}</b></div>
+      <div class="pill">Batida/Pulga <b>${money(p.valorBatida)}</b></div>
+      <div class="pill pote">Pote <b>${money(poteProjetado(p))}</b></div>
+      <div class="pill">Rodadas <b>${p.rounds.length}</b></div>
+    </div>`));
+  root.appendChild(buildBoard(p, false));
+
+  const resolvidoV = resolvedThisRound(p);
+  const risco = p.players.filter(pl => p.st.ativo[pl.id] && p.st.pontos[pl.id] >= p.limite && !resolvidoV.has(pl.id));
+  if (risco.length) {
+    const box = el(`<div class="card"><h2>⚠️ Passaram de ${p.limite} pontos</h2></div>`);
+    risco.forEach(pl => box.appendChild(el(`<div style="margin-bottom:4px"><b>${pl.nome}</b> — ${p.st.pontos[pl.id]} pts</div>`)));
+    root.appendChild(box);
+  }
+}
+
+/* --------------------------- Tela do espectador (antigo) ----------------- */
 function renderViewer() {
   const root = appRoot();
   root.innerHTML = '';
@@ -742,25 +821,10 @@ function renderSetup() {
     if (!valorPartida || !valorBatida) { toast('Informe os valores'); return; }
     const p = newPartida({ data, valorPartida, valorBatida, players: sel });
     state.partidas.push(p);
-    DB.save(state);
+    persist(p); // já publica como "jogo ao vivo" pra todos
     setupSel = [];
     render();
   });
-
-  // Acompanhar um jogo ao vivo (espectador)
-  const watch = el(`
-    <div class="card">
-      <h2>👁️ Acompanhar um jogo ao vivo</h2>
-      <p class="muted">Digite o código que o dono do jogo compartilhou.</p>
-      <div class="row" style="gap:8px">
-        <input type="text" id="watch-code" placeholder="Ex: ABCDE" maxlength="6" style="text-transform:uppercase;letter-spacing:2px;font-weight:800">
-        <button class="btn primary" id="watch-btn">Assistir</button>
-      </div>
-    </div>`);
-  const watchGo = () => joinOnline(watch.querySelector('#watch-code').value);
-  watch.querySelector('#watch-btn').addEventListener('click', watchGo);
-  watch.querySelector('#watch-code').addEventListener('keydown', e => { if (e.key === 'Enter') watchGo(); });
-  root.appendChild(watch);
 
   if (state.partidas.length) {
     root.appendChild(el(`<p class="muted" style="text-align:center">Você tem ${state.partidas.length} partida(s) no histórico.</p>`));
@@ -842,6 +906,19 @@ function renderJogadores() {
     fileInput.value = '';
   });
   root.appendChild(backup);
+
+  // Versão + atualizar
+  const verBox = el(`
+    <div class="row" style="justify-content:center;gap:10px;margin-top:6px">
+      <span class="muted" style="font-size:12px">Versão ${APP_VERSION}</span>
+      <button class="btn ghost sm" id="atualizar-btn">🔄 Atualizar app</button>
+    </div>`);
+  verBox.querySelector('#atualizar-btn').addEventListener('click', () => {
+    toast('Atualizando…');
+    if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(() => {});
+    setTimeout(() => location.reload(true), 400);
+  });
+  root.appendChild(verBox);
 }
 
 /* ------------------------------ Jogo ------------------------------------- */
@@ -865,31 +942,23 @@ function renderGame(p) {
     </div>`);
   root.appendChild(head);
 
-  if (p.online && p.online.role === 'host') {
-    const b = el(`
-      <div class="card" style="background:#eaf2ff;display:flex;align-items:center;gap:10px">
-        <span>📡 <b>Ao vivo</b> — outros acompanham com o código <b class="codebig">${p.online.code}</b></span>
-        <div class="spacer"></div>
-        <button class="btn ghost sm" id="copy-code">Copiar</button>
-      </div>`);
-    b.querySelector('#copy-code').addEventListener('click', () => {
-      const link = location.origin + location.pathname + '#ver=' + p.online.code;
-      if (navigator.clipboard) navigator.clipboard.writeText(link).then(() => toast('Link copiado!'), () => toast('Código: ' + p.online.code));
-      else toast('Código: ' + p.online.code);
-    });
-    root.appendChild(b);
+  if (!p.finalizada && cloudReady) {
+    root.appendChild(el(`
+      <div class="card" style="background:#ffecec;display:flex;align-items:center;gap:10px;padding:10px 14px">
+        <span class="live-dot"></span>
+        <span><b>Você está marcando ao vivo</b> — todos acompanham automaticamente.</span>
+      </div>`));
   }
 
   if (!p.finalizada) {
     const toolbar = el(`
       <div class="row" style="gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
         <button class="btn ghost sm" id="add-player-btn">+ Jogador</button>
-        ${p.online ? '' : '<button class="btn ghost sm" id="online-btn">📡 Jogar online</button>'}
+        <button class="btn ghost sm" id="livro-btn">🤝 Livro</button>
         <span class="muted" style="font-size:12px">Toque no <b>nome</b> p/ ver pontos e $ · no <b>Rx&nbsp;✎</b> p/ editar</span>
       </div>`);
     toolbar.querySelector('#add-player-btn').addEventListener('click', () => openAddPlayerModal(p));
-    const ob = toolbar.querySelector('#online-btn');
-    if (ob) ob.addEventListener('click', () => goOnline(p));
+    toolbar.querySelector('#livro-btn').addEventListener('click', () => openLivroModal(p));
     root.appendChild(toolbar);
   }
 
@@ -1216,6 +1285,75 @@ function openPulgaModal(p) {
   showModal(body);
 }
 
+/* ------------------------- Modal de Livro/Acordo ------------------------- */
+function openLivroModal(p) {
+  let payerId = null;
+  const valores = {}; // toId -> valor (número)
+  const quick = [1, 2, 3, 4].map(n => p.valorPartida * Math.pow(2, n)); // ex: 10, 20, 40, 80
+
+  const body = el(`
+    <div class="modal">
+      <div class="row"><h2>🤝 Livro / Acordo</h2><div class="spacer"></div>
+        <button class="btn ghost sm close">Fechar</button></div>
+      <p class="muted">Quem <b>livra</b> paga quem foi <b>livrado</b>. Livro 1 = ${money(quick[0])} · 2 = ${money(quick[1])} · 3 = ${money(quick[2])} · 4 = ${money(quick[3])}.</p>
+      <div class="field"><span>Quem livra (paga):</span></div>
+      <div class="chips chips-3" id="livro-payer"></div>
+      <div id="livro-recebe"></div>
+      <div style="height:12px"></div>
+      <button class="btn green full" id="save-livro">Lançar acordo</button>
+    </div>`);
+
+  const payerBox = body.querySelector('#livro-payer');
+  const recebeBox = body.querySelector('#livro-recebe');
+
+  function drawRecebe() {
+    recebeBox.innerHTML = '';
+    if (!payerId) return;
+    recebeBox.appendChild(el('<div class="field" style="margin-top:12px"><span>Quem foi livrado (recebe) e quanto:</span></div>'));
+    p.players.filter(pl => pl.id !== payerId).forEach(pl => {
+      const row = el(`
+        <div class="livro-row">
+          <div class="livro-nome">${pl.nome}</div>
+          <input class="livro-val" type="text" inputmode="decimal" placeholder="0,00" value="${valores[pl.id] ? money(valores[pl.id]) : ''}">
+          <div class="livro-quick">
+            ${quick.map((v, i) => `<button class="btn ghost sm" data-v="${v}">${i + 1}</button>`).join('')}
+          </div>
+        </div>`);
+      const inp = row.querySelector('.livro-val');
+      inp.addEventListener('input', () => { valores[pl.id] = parseBRL(inp.value); });
+      row.querySelectorAll('[data-v]').forEach(b => b.addEventListener('click', () => {
+        const v = Number(b.dataset.v);
+        valores[pl.id] = v; inp.value = money(v);
+      }));
+      recebeBox.appendChild(row);
+    });
+  }
+
+  p.players.forEach(pl => {
+    const chip = el(`<button class="chip">${pl.nome}</button>`);
+    chip.addEventListener('click', () => {
+      payerId = (payerId === pl.id) ? null : pl.id;
+      payerBox.querySelectorAll('.chip').forEach(c => c.classList.remove('on'));
+      if (payerId) chip.classList.add('on');
+      drawRecebe();
+    });
+    payerBox.appendChild(chip);
+  });
+
+  body.querySelector('#save-livro').addEventListener('click', () => {
+    if (!payerId) { toast('Escolha quem livra (paga)'); return; }
+    const deals = Object.entries(valores)
+      .filter(([toId, v]) => toId !== payerId && Number(v) > 0)
+      .map(([toId, v]) => ({ fromId: payerId, toId, valor: Number(v) }));
+    if (!deals.length) { toast('Informe o valor de pelo menos um jogador'); return; }
+    registrarAcordo(p, deals);
+    closeModal(); render();
+    toast('Acordo lançado!');
+  });
+  body.querySelector('.close').addEventListener('click', closeModal);
+  showModal(body);
+}
+
 /* --------------------------- Modal de rodada ----------------------------- */
 // Falta preencher: jogador ativo que não é o batedor, não está "fora" e não tem pontos
 function pontoVazio(v) { return v === undefined || v === null || String(v).trim() === ''; }
@@ -1505,7 +1643,7 @@ function renderDinheiro() {
   days.forEach((day, di) => {
     const det = el(`<details class="hist-day" ${di === 0 ? 'open' : ''}><summary>${formatDatePT(day)} — ${byDay[day].length} partida(s)</summary></details>`);
     // Numera cronologicamente (1ª, 2ª...) e mostra a mais recente em cima
-    const numeradas = byDay[day].map((p, i) => ({ p, n: i + 1 }));
+    const numeradas = byDay[day].slice().sort((a, b) => (a.criadoEm || 0) - (b.criadoEm || 0)).map((p, i) => ({ p, n: i + 1 }));
     numeradas.reverse().forEach(({ p, n }) => {
       const venc = p.players.find(x => x.id === p.vencedorId);
       const num = String(n).padStart(2, '0');
@@ -1553,7 +1691,7 @@ function renderHistory() {
   days.forEach(day => {
     const det = el(`<details class="hist-day" ${day === days[0] ? 'open' : ''}><summary>${formatDatePT(day)} — ${byDay[day].length} partida(s)</summary></details>`);
     // Numera na ordem cronológica (1ª, 2ª...) e exibe a mais recente em cima
-    const numeradas = byDay[day].map((p, i) => ({ p, n: i + 1 }));
+    const numeradas = byDay[day].slice().sort((a, b) => (a.criadoEm || 0) - (b.criadoEm || 0)).map((p, i) => ({ p, n: i + 1 }));
     numeradas.reverse().forEach(({ p, n }) => det.appendChild(histCard(p, n)));
     root.appendChild(det);
   });
@@ -1682,6 +1820,41 @@ function openConfirmModal({ title, message, okText, onOk }) {
 
 /* ============= Histórico + cadastro compartilhados (nuvem) ============== */
 let cloudReady = false;
+let myUid = null;       // meu id anônimo
+let liveDoc = null;     // partida ao vivo compartilhada (live/atual) ou null
+
+// Grava a partida em andamento como "jogo ao vivo" (todos veem; só o dono grava)
+function cloudSetLive(p) {
+  if (!cloudReady || !myUid) return;
+  fbDB.collection('live').doc('atual').set({
+    ownerUid: myUid, partidaId: p.id, criadoEm: p.criadoEm || Date.now(),
+    data: p.data, valorPartida: p.valorPartida, valorBatida: p.valorBatida, limite: p.limite || 100,
+    players: p.players.map(pl => ({ id: pl.id, nome: pl.nome })),
+    events: JSON.parse(JSON.stringify(p.events || [])),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  }).catch(e => console.warn('live set', e));
+}
+function cloudClearLive() {
+  if (!cloudReady) return;
+  fbDB.collection('live').doc('atual').delete().catch(() => {});
+}
+function buildLivePartida(d) {
+  const p = {
+    id: d.partidaId || 'live', criadoEm: d.criadoEm || 0,
+    data: d.data, valorPartida: d.valorPartida, valorBatida: d.valorBatida,
+    limite: d.limite || 100, players: d.players || [], events: d.events || [],
+    st: {}, rounds: [], pendingPulgas: [], finalizada: false, vencedorId: null,
+    online: { role: 'viewer' },
+  };
+  recompute(p);
+  return p;
+}
+function onLiveSnapshot(snap) {
+  liveDoc = snap.exists ? snap.data() : null;
+  // Atualiza a tela Jogo quando NÃO sou eu marcando (sou espectador)
+  const souDono = !!currentPartida();
+  if (currentScreen === 'home' && !souDono) cloudMaybeRender(['home']);
+}
 
 function cloudMaybeRender(screens) {
   if (!screens.includes(currentScreen)) return;
@@ -1700,7 +1873,8 @@ function cloudDeletePlayer(id) {
 }
 function partidaToCloud(p) {
   return {
-    id: p.id, data: p.data, valorPartida: p.valorPartida, valorBatida: p.valorBatida,
+    id: p.id, criadoEm: p.criadoEm || Date.now(),
+    data: p.data, valorPartida: p.valorPartida, valorBatida: p.valorBatida,
     limite: p.limite || 100,
     players: p.players.map(pl => ({ id: pl.id, nome: pl.nome })),
     events: JSON.parse(JSON.stringify(p.events || [])),
@@ -1718,7 +1892,8 @@ function cloudDeletePartida(id) {
 function partidaFromCloud(doc) {
   const d = doc.data ? doc.data() : doc; // aceita snapshot do Firestore ou objeto puro
   const p = {
-    id: doc.id, data: d.data, valorPartida: d.valorPartida, valorBatida: d.valorBatida,
+    id: doc.id, criadoEm: d.criadoEm || (d.updatedAt && d.updatedAt.toMillis ? d.updatedAt.toMillis() : 0),
+    data: d.data, valorPartida: d.valorPartida, valorBatida: d.valorBatida,
     limite: d.limite || 100, players: d.players || [], events: d.events || [],
     st: {}, rounds: [], pendingPulgas: [], finalizada: false, vencedorId: null,
   };
@@ -1726,10 +1901,9 @@ function partidaFromCloud(doc) {
   return p;
 }
 function mergeCloudRoster(docs) {
+  // Nuvem é a fonte da verdade: exclusão/edição de jogador reflete pra todos
   const cloud = docs.map(d => ({ id: d.id, nome: d.data().nome, criadoEm: d.data().criadoEm || 0 }));
-  const cloudIds = new Set(cloud.map(j => j.id));
-  const localOnly = state.jogadores.filter(j => !cloudIds.has(j.id)); // ainda não subiu (offline)
-  state.jogadores = [...cloud, ...localOnly].sort((a, b) => (a.criadoEm || 0) - (b.criadoEm || 0) || String(a.nome).localeCompare(b.nome));
+  state.jogadores = cloud.sort((a, b) => (a.criadoEm || 0) - (b.criadoEm || 0) || String(a.nome).localeCompare(b.nome));
   DB.save(state);
   cloudMaybeRender(['home', 'players', 'history', 'dinheiro']);
 }
@@ -1742,51 +1916,65 @@ function mergeCloudPartidas(docs) {
   cloudMaybeRender(['history', 'dinheiro', 'home']);
 }
 async function initCloudSync() {
-  try { await initFirebase(); } catch (e) { console.warn('Nuvem indisponível (offline?)', e); return; }
+  let user;
+  try { user = await initFirebase(); } catch (e) { console.warn('Nuvem indisponível (offline?)', e); return; }
   cloudReady = true;
+  myUid = user.uid;
   try {
-    // Semeia dados locais que ainda não estão na nuvem (ex.: seu cadastro/partidas)
+    // Semeia local→nuvem SÓ na primeira vez (nuvem vazia). Depois a nuvem é a fonte
+    // da verdade — evita ressuscitar jogadores/partidas apagados por outro aparelho.
     const [rSnap, pSnap] = await Promise.all([
       fbDB.collection('roster').get(),
       fbDB.collection('partidas').get(),
     ]);
-    const rIds = new Set(rSnap.docs.map(d => d.id));
-    const pIds = new Set(pSnap.docs.map(d => d.id));
-    state.jogadores.forEach(j => { if (!rIds.has(j.id)) cloudSetPlayer(j); });
-    state.partidas.filter(p => p.finalizada && p.id !== 'viewer' && !pIds.has(p.id)).forEach(cloudSetPartida);
+    if (rSnap.empty) state.jogadores.forEach(cloudSetPlayer);
+    if (pSnap.empty) state.partidas.filter(p => p.finalizada && p.id !== 'viewer').forEach(cloudSetPartida);
     // Escuta mudanças em tempo real
     fbDB.collection('roster').onSnapshot(s => mergeCloudRoster(s.docs), e => console.warn('roster snap', e));
     fbDB.collection('partidas').onSnapshot(s => mergeCloudPartidas(s.docs), e => console.warn('partidas snap', e));
+    // Jogo ao vivo compartilhado (todos veem automaticamente)
+    fbDB.collection('live').doc('atual').onSnapshot(onLiveSnapshot, e => console.warn('live snap', e));
+    // Se eu tenho um jogo local em andamento, retomo como dono (re-publico ao vivo)
+    const meu = currentPartida();
+    if (meu) cloudSetLive(meu);
   } catch (e) { console.warn('sync init', e); }
 }
 
 /* ------------------------------ Navegação -------------------------------- */
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
-    if (currentScreen === 'viewer') stopViewer();
     currentScreen = tab.dataset.screen;
     if (currentScreen === 'dinheiro') dinheiroPeriodo = 'dia'; // sempre abre em Hoje
     render();
   });
 });
 
-// Link compartilhado: .../pontinho/#ver=CODIGO abre direto como espectador
-function checkDeepLink() {
-  const m = (location.hash || '').match(/ver=([A-Za-z0-9]+)/);
-  if (m) { joinOnline(m[1]); return true; }
-  return false;
-}
-window.addEventListener('hashchange', checkDeepLink);
-
-if (!checkDeepLink()) render();
+render();
 
 // Sincroniza cadastro + histórico com a nuvem (todos os aparelhos veem o mesmo)
 initCloudSync();
 
 /* ------------------------------ PWA -------------------------------------- */
+function mostrarBannerAtualizar() {
+  if (document.getElementById('update-banner')) return;
+  const b = el('<div id="update-banner">🔄 Nova versão disponível — toque para atualizar</div>');
+  b.addEventListener('click', () => location.reload());
+  document.body.appendChild(b);
+}
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(err => console.warn('SW falhou', err));
+    navigator.serviceWorker.register('sw.js').then(reg => {
+      // Detecta nova versão instalada e avisa o usuário
+      reg.addEventListener('updatefound', () => {
+        const nw = reg.installing;
+        if (!nw) return;
+        nw.addEventListener('statechange', () => {
+          if (nw.state === 'installed' && navigator.serviceWorker.controller) mostrarBannerAtualizar();
+        });
+      });
+      // Checa por atualização de tempos em tempos (a cada 15 min)
+      setInterval(() => reg.update().catch(() => {}), 15 * 60 * 1000);
+    }).catch(err => console.warn('SW falhou', err));
   });
 }
 

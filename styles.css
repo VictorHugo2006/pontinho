@@ -144,6 +144,16 @@ input.data-center { text-align: center; }
 .me-geral.pos .me-geral-num { color: #7ee29a; }
 .me-geral.neg .me-geral-num { color: #ff9a9a; }
 
+.live-dot {
+  width: 12px; height: 12px; border-radius: 50%; background: var(--red);
+  flex: 0 0 auto; box-shadow: 0 0 0 0 rgba(214,69,69,.6); animation: livePulse 1.4s infinite;
+}
+@keyframes livePulse {
+  0% { box-shadow: 0 0 0 0 rgba(214,69,69,.6); }
+  70% { box-shadow: 0 0 0 8px rgba(214,69,69,0); }
+  100% { box-shadow: 0 0 0 0 rgba(214,69,69,0); }
+}
+
 .zerou-badge {
   margin: 6px 0 0; font-weight: 800; color: #7a4b00;
   background: #ffd24d; display: inline-block; padding: 4px 12px; border-radius: 20px;
@@ -260,6 +270,13 @@ table.board .money.lose { color: var(--red); }
 .rp.is-fora .rp-pts { visibility: hidden; }
 .rp.rp-missing { outline: 2px solid var(--red); background: #fdecec; }
 
+/* Livro / acordo */
+.livro-row { display: grid; grid-template-columns: 1fr auto; gap: 6px 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.livro-nome { font-weight: 700; font-size: 14px; }
+.livro-val { width: 100px; }
+.livro-quick { grid-column: 1 / -1; display: flex; gap: 6px; }
+.livro-quick .btn { flex: 1; }
+
 /* ---------- Modal ---------- */
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex;
@@ -295,6 +312,14 @@ table.board .money.lose { color: var(--red); }
   display: flex; gap: 10px; max-width: 900px; margin: 0 auto;
 }
 .fab-bar .btn { flex: 1; }
+
+#update-banner {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(96px + env(safe-area-inset-bottom, 0px)); z-index: 70;
+  background: var(--green-strong); color: #fff; font-weight: 800;
+  padding: 12px 18px; border-radius: 14px; box-shadow: var(--shadow);
+  cursor: pointer; max-width: 92%; text-align: center; font-size: 14px;
+}
 
 .toast {
   position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%);
