@@ -1182,9 +1182,13 @@ function buildBoard(p, editable) {
   trTotD.appendChild(el('<th style="background:#b6e3b6">DINHEIRO</th>'));
   p.players.forEach(pl => {
     const v = saldoExibido(p, pl.id);
-    const cls = v >= 0 ? 'pos' : 'neg';
-    const winLose = p.st.fechado ? (pl.id === p.vencedorId ? 'win' : 'lose') : '';
-    trTotD.appendChild(el(`<th class="money ${cls} ${winLose}">${money(v)}</th>`));
+    // Verde = ganhador; azul = positivo (não ganhador); vermelho = negativo
+    let cls;
+    if (p.st.fechado && pl.id === p.vencedorId) cls = 'win';
+    else if (v > 0) cls = 'azul';
+    else if (v < 0) cls = 'verm';
+    else cls = 'zero';
+    trTotD.appendChild(el(`<th class="money ${cls}">${money(v)}</th>`));
   });
   theadD.appendChild(trTotD);
   table.appendChild(theadD);

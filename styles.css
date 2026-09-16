@@ -253,6 +253,12 @@ table.board .name.lose, table.board .money.lose { background: #f6d6d6; }
 table.board .money.win { color: var(--green-strong); }
 table.board .money.lose { color: var(--red); }
 
+/* DINHEIRO por partida: verde=ganhador, azul=positivo, vermelho=negativo */
+table.board .money.win { background: #cdeccd; color: var(--green-strong); font-weight: 800; }
+table.board .money.azul { background: #d6e4ff; color: #0b3d91; font-weight: 800; }
+table.board .money.verm { background: #f6d6d6; color: var(--red); font-weight: 800; }
+table.board .money.zero { color: var(--muted); }
+
 /* ---------- Pote / header info ---------- */
 .game-head { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .pill { background: #fff; border-radius: 12px; padding: 8px 14px; box-shadow: var(--shadow); font-size: 13px; }
