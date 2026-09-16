@@ -189,6 +189,14 @@ input.data-center { text-align: center; }
 .chip.on { background: var(--ink); color: #fff; border-color: var(--ink); }
 .chip.on::before { content: "✓ "; }
 
+/* Barra de ordenação do Dinheiro: 4 botões numa linha só */
+.chips.sort-ord { flex-wrap: nowrap; gap: 6px; }
+.chips.sort-ord .chip {
+  flex: 1 1 0; min-width: 0; text-align: center; padding: 9px 4px; font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.chips.sort-ord .chip.on::before { content: none; }
+
 /* ---------- Linha de jogador (cadastro) ---------- */
 .jog-row {
   display: flex; align-items: center; gap: 10px; padding: 10px 0;
@@ -298,6 +306,13 @@ table.board .money.lose { color: var(--red); }
 .hist-day summary { font-weight: 800; padding: 12px; background: #fff; border-radius: 12px; box-shadow: var(--shadow); cursor: pointer; }
 .hist-partida { background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 12px; margin: 8px 0; }
 .hist-partida .h-title { font-weight: 700; margin-bottom: 6px; }
+.hist-partida.clickable { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.hist-partida.clickable:active { transform: scale(0.99); }
+.hist-partida.flash { animation: flashCard 1.6s ease; }
+@keyframes flashCard {
+  0% { box-shadow: 0 0 0 3px var(--yellow, #f2d600); }
+  100% { box-shadow: var(--shadow); }
+}
 .badge { display:inline-block; background: var(--yellow); border-radius: 8px; padding: 2px 8px; font-size: 12px; font-weight: 700; }
 
 .empty { text-align: center; color: var(--muted); padding: 40px 20px; }
