@@ -923,11 +923,7 @@ function renderJogadores() {
       <span class="muted" style="font-size:12px">Versão ${APP_VERSION}</span>
       <button class="btn ghost sm" id="atualizar-btn">🔄 Atualizar app</button>
     </div>`);
-  verBox.querySelector('#atualizar-btn').addEventListener('click', () => {
-    toast('Atualizando…');
-    if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(() => {});
-    setTimeout(() => location.reload(true), 400);
-  });
+  verBox.querySelector('#atualizar-btn').addEventListener('click', () => forcarAtualizacao());
   root.appendChild(verBox);
 }
 
@@ -1996,10 +1992,33 @@ render();
 initCloudSync();
 
 /* ------------------------------ PWA -------------------------------------- */
+// Atualização à prova de falha: limpa caches + remove o SW antigo e recarrega
+// buscando tudo novo do servidor (o SW se registra de novo no próximo load).
+let _atualizando = false;
+async function forcarAtualizacao() {
+  if (_atualizando) return;
+  _atualizando = true;
+  toast('Atualizando…');
+  try {
+    if (window.caches) {
+      const ks = await caches.keys();
+      await Promise.all(ks.map(k => caches.delete(k)));
+    }
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+  } catch (_) {}
+  // querystring nova evita o cache HTTP do navegador servir o index antigo
+  const u = new URL(location.href);
+  u.searchParams.set('u', Date.now());
+  location.replace(u.toString());
+}
+
 function mostrarBannerAtualizar() {
   if (document.getElementById('update-banner')) return;
   const b = el('<div id="update-banner">🔄 Nova versão disponível — toque para atualizar</div>');
-  b.addEventListener('click', () => location.reload());
+  b.addEventListener('click', () => forcarAtualizacao());
   document.body.appendChild(b);
 }
 if ('serviceWorker' in navigator) {
