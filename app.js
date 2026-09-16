@@ -69,6 +69,14 @@ function todayISO() {
   const off = d.getTimezoneOffset();
   return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
 }
+// "Dia de jogo": vira só às 6h da manhã, para a madrugada contar como a mesma noite.
+const GAME_DAY_CUTOFF_H = 6;
+function gameDayISO() {
+  const d = new Date();
+  if (d.getHours() < GAME_DAY_CUTOFF_H) d.setDate(d.getDate() - 1);
+  const off = d.getTimezoneOffset();
+  return new Date(d.getTime() - off * 60000).toISOString().slice(0, 10);
+}
 function formatDatePT(iso) {
   if (!iso || typeof iso !== 'string' || iso.indexOf('-') < 0) return '—';
   const [y, m, d] = iso.split('-');
@@ -747,7 +755,7 @@ function renderSetup() {
       <h2>Nova partida</h2>
       <label class="field">
         <span>Data</span>
-        <input type="date" id="f-data" class="data-center" value="${todayISO()}">
+        <input type="date" id="f-data" class="data-center" value="${gameDayISO()}">
       </label>
       <div class="row" style="gap:10px;margin-top:10px">
         <label class="field field-valor" style="flex:1">
@@ -814,7 +822,7 @@ function renderSetup() {
   });
 
   card.querySelector('#start-game').addEventListener('click', () => {
-    const data = card.querySelector('#f-data').value || todayISO();
+    const data = card.querySelector('#f-data').value || gameDayISO();
     const valorPartida = parseBRL(card.querySelector('#f-partida').value);
     const valorBatida = parseBRL(card.querySelector('#f-batida').value);
     // Na ORDEM de seleção (ordem da mesa)
@@ -1583,7 +1591,7 @@ let dinheiroPeriodo = 'dia'; // dia | semana | mes | ano | tudo
 let dinheiroSort = 'saldo';  // saldo | pulgas | batidas | vitorias | partidas
 let focusPartidaId = null;   // ao abrir o Histórico, rola/destaca esta partida
 function inPeriodo(dataISO, periodo) {
-  const hoje = todayISO();
+  const hoje = gameDayISO();
   if (periodo === 'tudo') return true;
   if (periodo === 'dia') return dataISO === hoje;
   if (periodo === 'mes') return dataISO.slice(0, 7) === hoje.slice(0, 7);

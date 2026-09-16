@@ -1,6 +1,6 @@
 /* Service Worker do Pontinho — cache para uso offline.
    Ao atualizar arquivos, suba o número da versão (mantenha igual ao ?v= do index.html). */
-const CACHE = 'pontinho-v32c';
+const CACHE = 'pontinho-v32d';
 const ASSETS = [
   './',
   './index.html',
