@@ -1590,6 +1590,11 @@ function openFinishModal(p) {
 let dinheiroPeriodo = 'dia'; // dia | semana | mes | ano | tudo
 let dinheiroSort = 'saldo';  // saldo | pulgas | batidas | vitorias | partidas
 let focusPartidaId = null;   // ao abrir o Histórico, rola/destaca esta partida
+let dinheiroDias = [];       // dias da semana marcados (vazio = a semana toda)
+let dinheiroMes = null;      // mês selecionado (0-11) na visão Mês (null = atual/último)
+let dinheiroAno = null;      // ano selecionado (AAAA) na visão Ano (null = ano atual)
+const DIN_DIAS = [[1, 'SEG'], [2, 'TER'], [3, 'QUA'], [4, 'QUI'], [5, 'SEX'], [6, 'SAB'], [0, 'DOM']];
+const DIN_MESES = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
 function inPeriodo(dataISO, periodo) {
   const hoje = gameDayISO();
   if (periodo === 'tudo') return true;
@@ -1609,13 +1614,67 @@ function renderDinheiro() {
   const ob = document.querySelector('.fab-bar'); if (ob) ob.remove();
 
   const periodos = [['dia', 'Hoje'], ['semana', 'Semana'], ['mes', 'Mês'], ['ano', 'Ano'], ['tudo', 'Tudo']];
-  const sel = el(`<div class="chips" style="margin-bottom:12px">
+  const sel = el(`<div class="chips" style="margin-bottom:10px">
     ${periodos.map(([k, l]) => `<button class="chip ${dinheiroPeriodo === k ? 'on' : ''}" data-p="${k}">${l}</button>`).join('')}
   </div>`);
   sel.querySelectorAll('[data-p]').forEach(b => b.addEventListener('click', () => { dinheiroPeriodo = b.dataset.p; render(); }));
   root.appendChild(sel);
 
-  const parts = state.partidas.filter(p => p.finalizada && inPeriodo(p.data, dinheiroPeriodo));
+  // ----- Sub-filtros (dependem do período escolhido) -----
+  const hojeG = gameDayISO();
+  const anoAtual = hojeG.slice(0, 4);
+  const mesAtual = +hojeG.slice(5, 7) - 1;
+  const finalizadas = state.partidas.filter(p => p.finalizada);
+  const mesesComJogo = [...new Set(finalizadas.filter(p => p.data.slice(0, 4) === anoAtual).map(p => +p.data.slice(5, 7) - 1))].sort((a, b) => a - b);
+  const anosComJogo = [...new Set(finalizadas.map(p => p.data.slice(0, 4)))];
+  if (!anosComJogo.includes(anoAtual)) anosComJogo.push(anoAtual);
+  anosComJogo.sort();
+  const effMes = (dinheiroMes != null && mesesComJogo.includes(dinheiroMes)) ? dinheiroMes
+    : mesesComJogo.includes(mesAtual) ? mesAtual
+      : (mesesComJogo.length ? mesesComJogo[mesesComJogo.length - 1] : mesAtual);
+  const effAno = (dinheiroAno && anosComJogo.includes(dinheiroAno)) ? dinheiroAno : anoAtual;
+
+  if (dinheiroPeriodo === 'semana') {
+    const sub = el(`<div class="chips sort-ord" style="margin:0 0 6px">
+      ${DIN_DIAS.map(([d, l]) => `<button class="chip ${dinheiroDias.includes(d) ? 'on' : ''}" data-d="${d}">${l}</button>`).join('')}
+    </div>`);
+    sub.querySelectorAll('[data-d]').forEach(b => b.addEventListener('click', () => {
+      const d = +b.dataset.d;
+      dinheiroDias = dinheiroDias.includes(d) ? dinheiroDias.filter(x => x !== d) : [...dinheiroDias, d];
+      render();
+    }));
+    root.appendChild(sub);
+    root.appendChild(el('<div class="muted" style="font-size:11px;margin:0 0 12px">Nenhum dia marcado = a semana toda</div>'));
+  } else if (dinheiroPeriodo === 'mes') {
+    if (mesesComJogo.length) {
+      const sub = el(`<div class="chips" style="margin:0 0 12px">
+        ${mesesComJogo.map(m => `<button class="chip ${effMes === m ? 'on' : ''}" data-m="${m}">${DIN_MESES[m]}</button>`).join('')}
+      </div>`);
+      sub.querySelectorAll('[data-m]').forEach(b => b.addEventListener('click', () => { dinheiroMes = +b.dataset.m; render(); }));
+      root.appendChild(sub);
+    }
+  } else if (dinheiroPeriodo === 'ano') {
+    const sub = el(`<div class="chips" style="margin:0 0 12px">
+      ${anosComJogo.map(a => `<button class="chip ${effAno === a ? 'on' : ''}" data-a="${a}">${a}</button>`).join('')}
+    </div>`);
+    sub.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => { dinheiroAno = b.dataset.a; render(); }));
+    root.appendChild(sub);
+  }
+
+  const passaFiltro = (p) => {
+    const d = p.data;
+    if (dinheiroPeriodo === 'tudo') return true;
+    if (dinheiroPeriodo === 'dia') return d === hojeG;
+    if (dinheiroPeriodo === 'semana') {
+      const diff = (new Date(hojeG + 'T00:00:00') - new Date(d + 'T00:00:00')) / 86400000;
+      if (!(diff >= 0 && diff < 7)) return false;
+      return dinheiroDias.length === 0 || dinheiroDias.includes(new Date(d + 'T00:00:00').getDay());
+    }
+    if (dinheiroPeriodo === 'mes') return d.slice(0, 4) === anoAtual && (+d.slice(5, 7) - 1) === effMes;
+    if (dinheiroPeriodo === 'ano') return d.slice(0, 4) === effAno;
+    return true;
+  };
+  const parts = finalizadas.filter(passaFiltro);
 
   // Ranking do período
   const agg = {};
