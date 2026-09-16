@@ -4,9 +4,9 @@ const CACHE = 'pontinho-v32d';
 const ASSETS = [
   './',
   './index.html',
-  './styles.css?v=32c',
-  './firebase-config.js?v=32c',
-  './app.js?v=32c',
+  './styles.css?v=32d',
+  './firebase-config.js?v=32d',
+  './app.js?v=32d',
   './manifest.json',
   './icon.svg',
 ];
