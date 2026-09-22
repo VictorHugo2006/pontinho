@@ -712,7 +712,7 @@ function renderViewer() {
       <div class="me-card">
         <div class="me-top">Você é <b>${me.nome}</b><button class="btn ghost sm" id="me-trocar">Trocar</button></div>
         <div class="me-grid">
-          <div class="me-box"><div class="me-label">SEUS PONTOS</div><div class="me-num">${pts}</div><div class="me-sub">${statusTxt}</div></div>
+          <div class="me-box"><div class="me-label">SEUS PONTOS</div><div class="me-num${eliminado ? ' fora-x' : ''}">${eliminado ? 'X' : pts}</div><div class="me-sub">${statusTxt}</div></div>
           <div class="me-box ${ganhando ? 'pos' : 'neg'}"><div class="me-label">${ganhando ? 'GANHANDO' : 'DEVENDO'}</div><div class="me-num">${money(Math.abs(dinheiro))}</div><div class="me-sub">${extras.join(' · ') || ' '}</div></div>
         </div>
         ${p.finalizada ? '' : `
@@ -1107,7 +1107,7 @@ function playerCardInner(p, id) {
   }
   return `
     <div class="me-grid">
-      <div class="me-box"><div class="me-label">PONTOS</div><div class="me-num">${pts}</div><div class="me-sub">${statusTxt}</div></div>
+      <div class="me-box"><div class="me-label">PONTOS</div><div class="me-num${eliminado ? ' fora-x' : ''}">${eliminado ? 'X' : pts}</div><div class="me-sub">${statusTxt}</div></div>
       <div class="me-box ${ganhando ? 'pos' : 'neg'}"><div class="me-label">${ganhando ? 'GANHANDO' : 'DEVENDO'}</div><div class="me-num">${money(Math.abs(dinheiro))}</div><div class="me-sub">${extras.join(' · ') || 'parcial'}</div></div>
     </div>
     ${p.finalizada ? '' : `
@@ -1157,7 +1157,10 @@ function buildBoard(p, editable) {
   const theadP = el('<thead class="pontos"></thead>');
   const trTotP = el('<tr></tr>');
   trTotP.appendChild(el('<th style="background:#f2d600">PONTOS</th>'));
-  p.players.forEach(pl => trTotP.appendChild(el(`<th class="total-pts">${p.st.pontos[pl.id]}</th>`)));
+  // Quem está fora da partida mostra X vermelho no lugar dos pontos (não confunde)
+  p.players.forEach(pl => trTotP.appendChild(el(p.st.ativo[pl.id]
+    ? `<th class="total-pts">${p.st.pontos[pl.id]}</th>`
+    : '<th class="total-pts fora-x">X</th>')));
   const trNameP = el('<tr></tr>');
   trNameP.appendChild(el('<th></th>'));
   p.players.forEach(pl => {
