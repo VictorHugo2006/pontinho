@@ -1160,8 +1160,9 @@ function buildBoard(p, editable) {
   p.rounds.forEach(r => {
     const tr = el('<tr></tr>');
     const pulgaLabel = (r.pulgaIds && r.pulgaIds.length) ? ' 🐛' : '';
-    // Só rodadas com batida (evento 'round') podem ser editadas
-    const canEdit = editable && r.evIndex != null && r.batedorId;
+    // Rodadas registradas (evento 'round') podem ser editadas — inclusive as "ninguém bateu".
+    // A linha só-pulga aponta para um evento 'finalizar', então fica de fora naturalmente.
+    const canEdit = editable && r.evIndex != null && p.events[r.evIndex] && p.events[r.evIndex].type === 'round';
     const rlabel = el(`<td class="rlabel ${canEdit ? 'editable' : 'muted'}">R${r.n}${pulgaLabel}${canEdit ? ' ✎' : ''}</td>`);
     if (canEdit) rlabel.addEventListener('click', () => openRoundEditModal(p, r.evIndex));
     tr.appendChild(rlabel);
@@ -1369,7 +1370,7 @@ function pontoVazio(v) { return v === undefined || v === null || String(v).trim(
 
 function openRoundModal(p) {
   const ativos = activePlayers(p);
-  const draft = { batedorId: null, foraIds: [], pontos: {} };
+  const draft = { batedorId: null, foraIds: [], pontos: {}, semBatedor: false };
   let tentou = false;
   const falta = (pl) => pl.id !== draft.batedorId && !draft.foraIds.includes(pl.id) && pontoVazio(draft.pontos[pl.id]);
 
@@ -1378,14 +1379,22 @@ function openRoundModal(p) {
       <div class="row"><h2>Nova rodada</h2><div class="spacer"></div>
         <button class="btn ghost sm close">Fechar</button></div>
       <p class="muted">Marque quem <b>bateu</b> (–). Cada um dos outros precisa ter os <b>pontos</b> digitados ou o <b>X Fora</b> marcado. <b>X Fora = sai da partida</b> (nas próximas rodadas já aparece fora e não soma mais). Pulga é no botão 🐛.</p>
+      <button class="btn ghost sm full nb-btn" id="ninguem-bateu" style="margin-bottom:10px">🃏 Ninguém bateu (acabaram as cartas)</button>
       <div class="round-players"></div>
       <div style="height:14px"></div>
       <button class="btn primary full" id="save-round">Salvar rodada</button>
     </div>`);
 
   const listEl = body.querySelector('.round-players');
+  const nbBtn = body.querySelector('#ninguem-bateu');
+  nbBtn.addEventListener('click', () => {
+    draft.semBatedor = !draft.semBatedor;
+    if (draft.semBatedor) draft.batedorId = null;
+    refresh();
+  });
 
   function refresh() {
+    nbBtn.classList.toggle('on', draft.semBatedor);
     listEl.innerHTML = '';
     ativos.forEach(pl => {
       const isBat = draft.batedorId === pl.id;
@@ -1397,7 +1406,7 @@ function openRoundModal(p) {
           <input class="rp-pts" type="number" inputmode="numeric" placeholder="pts"
                  value="${draft.pontos[pl.id] ?? ''}" ${isBat ? 'disabled' : ''}>
           <div class="row" style="gap:6px">
-            <button class="rp-toggle bat ${isBat ? 'on' : ''}" data-t="bat">– Bateu</button>
+            <button class="rp-toggle bat ${isBat ? 'on' : ''}" data-t="bat" ${draft.semBatedor ? 'disabled style="opacity:.35"' : ''}>– Bateu</button>
             <button class="rp-toggle fora ${isFora ? 'on' : ''}" data-t="fora">X Fora</button>
           </div>
         </div>`);
@@ -1409,6 +1418,7 @@ function openRoundModal(p) {
       });
 
       rp.querySelector('[data-t="bat"]').addEventListener('click', () => {
+        if (draft.semBatedor) return;
         // Só um batedor: define este e limpa qualquer outro automaticamente
         draft.batedorId = isBat ? null : pl.id;
         if (draft.batedorId === pl.id) {
@@ -1433,7 +1443,7 @@ function openRoundModal(p) {
   refresh();
 
   body.querySelector('#save-round').addEventListener('click', () => {
-    if (!draft.batedorId) { toast('Marque quem bateu (–)'); return; }
+    if (!draft.semBatedor && !draft.batedorId) { toast('Marque quem bateu (–) ou toque "Ninguém bateu"'); return; }
     const faltam = ativos.filter(falta);
     if (faltam.length) {
       tentou = true; refresh();
@@ -1441,6 +1451,7 @@ function openRoundModal(p) {
       return;
     }
     // Registra a rodada; quem levou X Fora SAI da partida (elimina a partir da próxima rodada)
+    // semBatedor => batedorId null: recompute não aplica dinheiro, só soma os pontos
     p.events.push({ type: 'round', batedorId: draft.batedorId, foraIds: [...draft.foraIds], pontos: { ...draft.pontos } });
     draft.foraIds.forEach(id => p.events.push({ type: 'eliminar', playerId: id }));
     recompute(p);
@@ -1479,6 +1490,7 @@ function openRoundEditModal(p, evIndex) {
     batedorId: ev.batedorId || null,
     foraIds: [...(ev.foraIds || [])],
     pontos: { ...(ev.pontos || {}) },
+    semBatedor: !ev.batedorId,
   };
 
   const body = el(`
@@ -1486,6 +1498,7 @@ function openRoundEditModal(p, evIndex) {
       <div class="row"><h2>Editar rodada</h2><div class="spacer"></div>
         <button class="btn ghost sm close">Fechar</button></div>
       <p class="muted">Ajuste quem bateu e os pontos. O placar e o dinheiro recalculam sozinhos.</p>
+      <button class="btn ghost sm full nb-btn" id="ninguem-bateu" style="margin-bottom:10px">🃏 Ninguém bateu (acabaram as cartas)</button>
       <div class="round-players"></div>
       <div style="height:14px"></div>
       <div class="btnbar">
@@ -1498,7 +1511,14 @@ function openRoundEditModal(p, evIndex) {
   const falta = (pl) => pl.id !== draft.batedorId && !draft.foraIds.includes(pl.id) && pontoVazio(draft.pontos[pl.id]);
 
   const listEl = body.querySelector('.round-players');
+  const nbBtn = body.querySelector('#ninguem-bateu');
+  nbBtn.addEventListener('click', () => {
+    draft.semBatedor = !draft.semBatedor;
+    if (draft.semBatedor) draft.batedorId = null;
+    refresh();
+  });
   function refresh() {
+    nbBtn.classList.toggle('on', draft.semBatedor);
     listEl.innerHTML = '';
     ativos.forEach(pl => {
       const isBat = draft.batedorId === pl.id;
@@ -1510,7 +1530,7 @@ function openRoundEditModal(p, evIndex) {
           <input class="rp-pts" type="number" inputmode="numeric" placeholder="pts"
                  value="${draft.pontos[pl.id] ?? ''}" ${isBat ? 'disabled' : ''}>
           <div class="row" style="gap:6px">
-            <button class="rp-toggle bat ${isBat ? 'on' : ''}" data-t="bat">– Bateu</button>
+            <button class="rp-toggle bat ${isBat ? 'on' : ''}" data-t="bat" ${draft.semBatedor ? 'disabled style="opacity:.35"' : ''}>– Bateu</button>
             <button class="rp-toggle fora ${isFora ? 'on' : ''}" data-t="fora">X Fora</button>
           </div>
         </div>`);
@@ -1520,6 +1540,7 @@ function openRoundEditModal(p, evIndex) {
         if (tentou) rp.classList.toggle('rp-missing', falta(pl));
       });
       rp.querySelector('[data-t="bat"]').addEventListener('click', () => {
+        if (draft.semBatedor) return;
         draft.batedorId = isBat ? null : pl.id;
         if (draft.batedorId === pl.id) { draft.foraIds = draft.foraIds.filter(x => x !== pl.id); delete draft.pontos[pl.id]; }
         refresh();
@@ -1535,7 +1556,7 @@ function openRoundEditModal(p, evIndex) {
   refresh();
 
   body.querySelector('#save-round').addEventListener('click', () => {
-    if (!draft.batedorId) { toast('Marque quem bateu (–)'); return; }
+    if (!draft.semBatedor && !draft.batedorId) { toast('Marque quem bateu (–) ou toque "Ninguém bateu"'); return; }
     const faltam = ativos.filter(falta);
     if (faltam.length) {
       tentou = true; refresh();

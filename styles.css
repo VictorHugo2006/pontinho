@@ -283,6 +283,8 @@ table.board .money.zero { color: var(--muted); }
 .rp.is-bat { opacity: .95; outline: 2px solid var(--ink); }
 .rp.is-fora .rp-pts { visibility: hidden; }
 .rp.rp-missing { outline: 2px solid var(--red); background: #fdecec; }
+/* Botão "Ninguém bateu" ligado */
+.nb-btn.on { background: var(--ink); color: #fff; border-color: var(--ink); }
 
 /* Livro / acordo */
 .livro-row { display: grid; grid-template-columns: 1fr auto; gap: 6px 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
