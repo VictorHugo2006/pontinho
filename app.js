@@ -453,6 +453,16 @@ function finalizar(p, vencedorId) {
   persist(p);
 }
 
+// Cancela uma partida iniciada por engano: remove tudo e volta para a tela de nova partida.
+function cancelarPartida(p) {
+  state.partidas = state.partidas.filter(x => x.id !== p.id);
+  DB.save(state);
+  if (typeof cloudClearLive === 'function') cloudClearLive();      // tira o jogo ao vivo da nuvem
+  if (typeof cloudDeletePartida === 'function') cloudDeletePartida(p.id); // garante que não fique gravada
+  currentScreen = 'home';
+  render();
+}
+
 // Jogadores já resolvidos (volta/cai fora) DESDE a última rodada — não podem repetir na mesma rodada
 function resolvedThisRound(p) {
   let lastRound = -1;
@@ -961,10 +971,19 @@ function renderGame(p) {
       <div class="row" style="gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
         <button class="btn ghost sm" id="add-player-btn">+ Jogador</button>
         <button class="btn ghost sm" id="livro-btn">🤝 Acordo</button>
+        <button class="btn ghost sm" id="cancelar-btn" style="color:var(--red);border-color:#f0c0c0">🗑 Cancelar</button>
         <span class="muted" style="font-size:12px">Toque no <b>nome</b> p/ ver pontos e $ · no <b>Rx&nbsp;✎</b> p/ editar</span>
       </div>`);
     toolbar.querySelector('#add-player-btn').addEventListener('click', () => openAddPlayerModal(p));
     toolbar.querySelector('#livro-btn').addEventListener('click', () => openLivroModal(p));
+    toolbar.querySelector('#cancelar-btn').addEventListener('click', () => {
+      openConfirmModal({
+        title: 'Cancelar esta partida?',
+        message: 'A partida atual será apagada por completo (pontos, dinheiro e jogadas). Isso não dá pra desfazer. Use quando começou errado e quer recomeçar.',
+        okText: 'Cancelar partida',
+        onOk: () => { cancelarPartida(p); toast('Partida cancelada'); },
+      });
+    });
     root.appendChild(toolbar);
   }
 
@@ -1195,9 +1214,12 @@ function buildBoard(p, editable) {
 }
 
 function roundMark(p, r, playerId) {
-  // Voltou nesta rodada: célula azul com os pontos do maior
+  // Voltou nesta rodada: célula azul com os pontos do maior (com 🐛 se também pegou pulga)
   const volta = (r.voltas || []).find(v => v.playerId === playerId);
-  if (volta) return `<span class="cell-volta">${volta.pontos}</span>`;
+  if (volta) {
+    const pulgaV = (r.pulgaIds || []).includes(playerId) ? '🐛 ' : '';
+    return `<span class="round-mark">${pulgaV}<span class="cell-volta">${volta.pontos}</span></span>`;
+  }
   // Não estava ativo nesta rodada: se já tinha caído fora, mostra X; se entrou depois, em branco
   if (r.activeIds && !r.activeIds.includes(playerId)) {
     if (r.foraAcum && r.foraAcum.includes(playerId)) return '<span class="round-mark sign">X</span>';
@@ -1297,7 +1319,8 @@ function openPulgaModal(p) {
 }
 
 /* ------------------------- Modal de Livro/Acordo ------------------------- */
-function openLivroModal(p) {
+function openLivroModal(p, opts = {}) {
+  const finalizarVenc = opts.finalizarComVencedor || null; // se veio do fluxo do ganhador
   let payerId = null;
   const valores = {}; // toId -> valor (número)
   const quick = [1, 2, 3, 4].map(n => p.valorPartida * Math.pow(2, n)); // ex: 10, 20, 40, 80
@@ -1306,11 +1329,13 @@ function openLivroModal(p) {
     <div class="modal">
       <div class="row"><h2>🤝 Acordo / Livre</h2><div class="spacer"></div>
         <button class="btn ghost sm close">Fechar</button></div>
+      ${finalizarVenc ? '<p class="muted">Lance quantos acordos precisar. Ao terminar, toque em <b>Finalizar partida</b>.</p>' : ''}
       <div class="field"><span>Quem livra (paga):</span></div>
       <div class="chips chips-3" id="livro-payer"></div>
       <div id="livro-recebe"></div>
       <div style="height:12px"></div>
-      <button class="btn green full" id="save-livro">Lançar acordo</button>
+      <button class="btn green full" id="save-livro">${finalizarVenc ? '➕ Lançar este acordo' : 'Lançar acordo'}</button>
+      ${finalizarVenc ? '<button class="btn primary full" id="finalizar-apos" style="margin-top:8px">✅ Finalizar partida</button>' : ''}
     </div>`);
 
   const payerBox = body.querySelector('#livro-payer');
@@ -1350,16 +1375,39 @@ function openLivroModal(p) {
     payerBox.appendChild(chip);
   });
 
+  const coletaDeals = () => Object.entries(valores)
+    .filter(([toId, v]) => toId !== payerId && Number(v) > 0)
+    .map(([toId, v]) => ({ fromId: payerId, toId, valor: Number(v) }));
+
   body.querySelector('#save-livro').addEventListener('click', () => {
     if (!payerId) { toast('Escolha quem livra (paga)'); return; }
-    const deals = Object.entries(valores)
-      .filter(([toId, v]) => toId !== payerId && Number(v) > 0)
-      .map(([toId, v]) => ({ fromId: payerId, toId, valor: Number(v) }));
+    const deals = coletaDeals();
     if (!deals.length) { toast('Informe o valor de pelo menos um jogador'); return; }
     registrarAcordo(p, deals);
-    closeModal(); render();
-    toast('Acordo lançado!');
+    if (finalizarVenc) {
+      // Mantém o modal aberto para lançar outro acordo
+      payerId = null;
+      Object.keys(valores).forEach(k => delete valores[k]);
+      payerBox.querySelectorAll('.chip').forEach(c => c.classList.remove('on'));
+      drawRecebe();
+      toast('Acordo lançado! Adicione outro ou finalize.');
+    } else {
+      closeModal(); render();
+      toast('Acordo lançado!');
+    }
   });
+
+  const finBtn = body.querySelector('#finalizar-apos');
+  if (finBtn) finBtn.addEventListener('click', () => {
+    // Lança um acordo preenchido mas ainda não confirmado, se houver
+    if (payerId) { const deals = coletaDeals(); if (deals.length) registrarAcordo(p, deals); }
+    finalizar(p, finalizarVenc);
+    closeModal();
+    const venc = p.players.find(x => x.id === finalizarVenc);
+    toast(venc ? `${venc.nome} venceu!` : 'Partida finalizada');
+    currentScreen = 'history'; render();
+  });
+
   body.querySelector('.close').addEventListener('click', closeModal);
   showModal(body);
 }
@@ -1416,6 +1464,8 @@ function openRoundModal(p) {
         draft.pontos[pl.id] = ptsInput.value;
         if (tentou) rp.classList.toggle('rp-missing', falta(pl));
       });
+      // Tocar no nome/linha foca a caixa de pontos (facilita no celular)
+      rp.querySelector('.rp-name').addEventListener('click', () => { if (!ptsInput.disabled) ptsInput.focus(); });
 
       rp.querySelector('[data-t="bat"]').addEventListener('click', () => {
         if (draft.semBatedor) return;
@@ -1539,6 +1589,7 @@ function openRoundEditModal(p, evIndex) {
         draft.pontos[pl.id] = ptsInput.value;
         if (tentou) rp.classList.toggle('rp-missing', falta(pl));
       });
+      rp.querySelector('.rp-name').addEventListener('click', () => { if (!ptsInput.disabled) ptsInput.focus(); });
       rp.querySelector('[data-t="bat"]').addEventListener('click', () => {
         if (draft.semBatedor) return;
         draft.batedorId = isBat ? null : pl.id;
@@ -1594,13 +1645,35 @@ function openFinishModal(p) {
   ativos.forEach(pl => {
     const b = el(`<button class="btn green full" style="margin-bottom:8px">${pl.nome} venceu</button>`);
     b.addEventListener('click', () => {
-      finalizar(p, pl.id); closeModal(); toast(`${pl.nome} venceu!`);
-      currentScreen = 'history'; render();
+      closeModal();
+      openAcordoDecisionModal(p, pl);
     });
     list.appendChild(b);
   });
   body.querySelector('#close-nowin').addEventListener('click', () => {
     finalizar(p, null); closeModal();
+    currentScreen = 'history'; render();
+  });
+  body.querySelector('.close').addEventListener('click', closeModal);
+  showModal(body);
+}
+
+// Pergunta se houve acordo antes de finalizar. Sim -> tela de acordo; Não -> finaliza direto.
+function openAcordoDecisionModal(p, pl) {
+  const body = el(`
+    <div class="modal">
+      <div class="row"><h2>Houve acordo?</h2><div class="spacer"></div>
+        <button class="btn ghost sm close">Fechar</button></div>
+      <p class="muted"><b>${pl.nome}</b> venceu. Antes de finalizar, houve algum <b>acordo</b> (livre/acerto) para lançar?</p>
+      <button class="btn green full" id="ac-sim" style="margin-bottom:8px">Sim, lançar acordo</button>
+      <button class="btn primary full" id="ac-nao">Não, finalizar</button>
+    </div>`);
+  body.querySelector('#ac-sim').addEventListener('click', () => {
+    closeModal();
+    openLivroModal(p, { finalizarComVencedor: pl.id });
+  });
+  body.querySelector('#ac-nao').addEventListener('click', () => {
+    finalizar(p, pl.id); closeModal(); toast(`${pl.nome} venceu!`);
     currentScreen = 'history'; render();
   });
   body.querySelector('.close').addEventListener('click', closeModal);
