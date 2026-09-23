@@ -587,6 +587,7 @@ const appRoot = () => document.getElementById('app');
 function render() {
   document.querySelectorAll('.tab').forEach(t =>
     t.classList.toggle('active', t.dataset.screen === currentScreen));
+  if (currentScreen === 'online' && typeof renderOnline === 'function') return renderOnline();
   if (currentScreen === 'history') return renderHistory();
   if (currentScreen === 'dinheiro') return renderDinheiro();
   if (currentScreen === 'players') return renderJogadores();
@@ -848,6 +849,13 @@ function renderSetup() {
 
   if (state.partidas.length) {
     root.appendChild(el(`<p class="muted" style="text-align:center">Você tem ${state.partidas.length} partida(s) no histórico.</p>`));
+  }
+
+  // Entrada para o modo "Jogar online" (beta) — jogo de cartas de verdade pelo celular
+  if (typeof renderOnline === 'function') {
+    const onl = el('<button class="btn ghost full" style="margin-top:14px">🌐 Jogar Pontinho online (beta)</button>');
+    onl.addEventListener('click', () => { currentScreen = 'online'; render(); });
+    root.appendChild(onl);
   }
 }
 
