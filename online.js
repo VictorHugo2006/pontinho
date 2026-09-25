@@ -55,10 +55,31 @@ function onMaoRef(code, uid) { return fbDB.collection('mesas').doc(code).collect
 function onLimpaSubs() {
   if (ONLINE.unsubMesa) { ONLINE.unsubMesa(); ONLINE.unsubMesa = null; }
   if (ONLINE.unsubMao) { ONLINE.unsubMao(); ONLINE.unsubMao = null; }
+  if (ONLINE._tick) { clearInterval(ONLINE._tick); ONLINE._tick = null; }
+}
+// Segundos restantes da janela de 30s para todos entrarem
+const ON_ESPERA_SEG = 30;
+function onEsperaRestante() {
+  const m = ONLINE.mesa;
+  if (!m || !m.criadoEm) return 0;
+  return Math.max(0, ON_ESPERA_SEG - Math.floor((Date.now() - m.criadoEm) / 1000));
+}
+function onTick() {
+  const m = ONLINE.mesa;
+  if (!m || m.status !== 'aguardando') return;
+  const restante = onEsperaRestante();
+  // Ao zerar, o host começa automaticamente se já tiver 2+ jogadores
+  if (restante <= 0 && m.hostUid === myUid && (m.jogadores || []).length >= 2 && !ONLINE._iniciando) {
+    ONLINE._iniciando = true;
+    onIniciar();
+    return;
+  }
+  if (currentScreen === 'online') renderOnline();
 }
 function onEntrarSub(code) {
   onLimpaSubs();
-  ONLINE.code = code; ONLINE.sel = []; ONLINE.mesa = null; ONLINE.mao = null;
+  ONLINE.code = code; ONLINE.sel = []; ONLINE.mesa = null; ONLINE.mao = null; ONLINE._iniciando = false;
+  ONLINE._tick = setInterval(onTick, 1000);
   ONLINE.unsubMesa = onMesaRef(code).onSnapshot(
     s => { ONLINE.mesa = s.exists ? s.data() : null; onReportarPontos(); if (currentScreen === 'online') renderOnline(); },
     e => { console.warn('mesa snap', e); toast('Erro de conexão (veja as Regras do Firestore)'); }
@@ -349,7 +370,11 @@ async function onEncaixar(groupId) {
       msg = 'Queimou! 🔥'; done = true;
     }
   }
-  if (!done) { toast('Não encaixa aqui: coringa só no meio (ponta só pra bater)'); return; }
+  if (!done) {
+    const temCoringaSel = add.some(c => onEhCoringa(c, m.coringa));
+    toast(temCoringaSel ? 'Coringa não entra em trinca — toque numa sequência' : 'Não encaixa aqui: coringa só no meio (ponta só pra bater)');
+    return;
+  }
 
   const maosCount = { ...(m.maosCount || {}), [myUid]: novaMao.length };
   const bateu = novaMao.length === 0;
@@ -507,9 +532,11 @@ function onRenderEspera(root) {
   m.jogadores.forEach(j => lst.appendChild(el(
     `<div class="jog-row"><div class="jog-name">${j.nome}${j.uid === m.hostUid ? ' 👑' : ''}${j.uid === myUid ? ' <span class="muted">(você)</span>' : ''}</div></div>`)));
   root.appendChild(lst);
+  const restante = onEsperaRestante();
+  root.appendChild(el(`<p class="muted" style="text-align:center;font-size:15px">${restante > 0 ? '⏳ Começa em <b>' + restante + 's</b> — tempo para todos entrarem' : (m.jogadores.length >= 2 ? 'Pronto para começar!' : 'Aguardando pelo menos 2 jogadores…')}</p>`));
   if (m.hostUid === myUid) {
-    const b = el(`<button class="btn primary full" ${m.jogadores.length < 2 ? 'disabled' : ''}>Iniciar jogo (${m.jogadores.length})</button>`);
-    b.addEventListener('click', onIniciar);
+    const b = el(`<button class="btn primary full" ${m.jogadores.length < 2 ? 'disabled' : ''}>▶ Iniciar agora (${m.jogadores.length})</button>`);
+    b.addEventListener('click', () => { ONLINE._iniciando = true; onIniciar(); });
     root.appendChild(b);
   } else {
     root.appendChild(el('<p class="muted" style="text-align:center">Aguardando o host iniciar…</p>'));

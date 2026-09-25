@@ -289,11 +289,11 @@ table.board .money.zero { color: var(--muted); }
 /* ---------- Pontinho Online: cartas ---------- */
 .oncard {
   display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
-  min-width: 46px; height: 64px; border-radius: 9px; border: 1px solid var(--line);
-  background: #fff; font-weight: 800; font-size: 19px; line-height: 1; padding: 4px 6px;
+  min-width: 50px; height: 70px; border-radius: 9px; border: 1px solid var(--line);
+  background: #fff; font-weight: 800; font-size: 24px; line-height: 1; padding: 4px 6px;
   -webkit-tap-highlight-color: transparent;
 }
-.oncard .np { font-size: 17px; margin-top: 2px; }
+.oncard .np { font-size: 22px; margin-top: 3px; }
 .oncard.red { color: #d64545; }
 .oncard.black { color: #1c1c1c; }
 .oncard.sel { outline: 3px solid var(--yellow); transform: translateY(-5px); }
@@ -386,8 +386,8 @@ table.board .money.zero { color: var(--muted); }
 .on-deckunit { position: relative; display: inline-block; margin-left: 18px; }
 .on-deckunit .oncard.back { position: relative; z-index: 1; }
 .on-deckunit .on-count { z-index: 2; }
-.on-coringa-diag { position: absolute; left: -30px; top: 20px; transform: rotate(-22deg); z-index: 0; box-shadow: 0 2px 6px rgba(0, 0, 0, .45); }
-.on-deckunit { margin-left: 30px; }
+.on-coringa-diag { position: absolute; left: -42px; top: 6px; transform: rotate(-18deg); z-index: 2; box-shadow: 0 2px 6px rgba(0, 0, 0, .5); }
+.on-deckunit { margin-left: 46px; }
 .on-pulga-ind { margin-left: 6px; }
 .on-pulga-ind b.red { color: #ff9a9a; }
 .on-pulga-btn { background: var(--green-strong) !important; color: #fff !important; border-color: var(--green-strong) !important; }
@@ -411,7 +411,8 @@ table.board .money.zero { color: var(--muted); }
   .on-table { gap: 2px; padding: 0; }
   .on-opps { margin-bottom: 2px; gap: 10px; }
   .on-center { gap: 14px; }
-  .on-coringa-diag { top: 12px; left: -16px; }
+  .on-coringa-diag { top: 4px; left: -34px; }
+  .on-deckunit { margin-left: 38px; }
   .on-hint { padding: 2px 6px; font-size: 10px; margin: 2px 0 0; }
   .on-jogoswrap { padding: 2px; margin-top: 2px; }
   .on-jogos { min-height: 40px; gap: 5px; }
@@ -441,7 +442,8 @@ table.board .money.zero { color: var(--muted); }
 .on-screen.girado .on-table { gap: 2px; padding: 0; }
 .on-screen.girado .on-opps { margin-bottom: 2px; gap: 10px; }
 .on-screen.girado .on-center { gap: 14px; }
-.on-screen.girado .on-coringa-diag { top: 12px; left: -16px; }
+.on-screen.girado .on-coringa-diag { top: 4px; left: -34px; }
+.on-screen.girado .on-deckunit { margin-left: 38px; }
 .on-screen.girado .on-hint { padding: 2px 6px; font-size: 10px; margin: 2px 0 0; }
 .on-screen.girado .on-jogoswrap { padding: 2px; margin-top: 2px; }
 .on-screen.girado .on-jogos { min-height: 40px; gap: 5px; }
