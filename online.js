@@ -446,13 +446,18 @@ function onRenderMesa(root) {
   root.appendChild(screen);
 }
 
-// Alterna tela cheia de verdade (esconde a barra do navegador)
-function onToggleFull() {
+// Alterna tela cheia de verdade e trava em paisagem (deitado) no Android
+async function onToggleFull() {
   try {
     if (!document.fullscreenElement) {
-      (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen || (() => {})).call(document.documentElement);
+      const d = document.documentElement;
+      const req = d.requestFullscreen || d.webkitRequestFullscreen;
+      if (req) { try { await req.call(d); } catch (_) {} }
+      try { if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape'); } catch (_) {}
     } else {
-      (document.exitFullscreen || document.webkitExitFullscreen || (() => {})).call(document);
+      try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (_) {}
+      const exit = document.exitFullscreen || document.webkitExitFullscreen;
+      if (exit) { try { await exit.call(document); } catch (_) {} }
     }
   } catch (_) {}
 }
