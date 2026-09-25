@@ -300,6 +300,52 @@ table.board .money.zero { color: var(--muted); }
 .oncard.back { background: #2f6fd0; color: #fff; font-size: 28px; border-color: #2f6fd0; }
 .oncard.vazio { color: var(--muted); background: #f5f5f4; font-size: 22px; }
 
+/* ---------- Pontinho Online: mesa (feltro) ---------- */
+.on-felt {
+  background: linear-gradient(160deg, #0f6b3a, #0a4f2b);
+  border-radius: 16px; padding: 12px 10px 14px; color: #eafff0;
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, .25);
+}
+.on-topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.on-code-badge { background: #ffffff22; padding: 3px 10px; border-radius: 20px; font-weight: 800; font-size: 12px; letter-spacing: 1px; }
+.on-turn { font-size: 13px; font-weight: 700; }
+.on-turn.me { background: #b6e3b6; color: #0a4f2b; padding: 3px 10px; border-radius: 20px; }
+.on-opps { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; margin-bottom: 10px; }
+.on-opp { text-align: center; opacity: .85; }
+.on-opp.vez { opacity: 1; }
+.on-backstack { position: relative; display: inline-block; }
+.on-back {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 60px; border-radius: 8px; background: #2f6fd0; color: #fff;
+  font-size: 24px; border: 2px solid rgba(255, 255, 255, .35);
+}
+.on-opp.vez .on-back { outline: 3px solid var(--yellow); }
+.on-count {
+  position: absolute; right: -6px; bottom: -6px; background: #111; color: #fff;
+  border-radius: 10px; font-size: 11px; font-weight: 800; padding: 1px 6px;
+}
+.on-opp-name { font-size: 12px; margin-top: 8px; font-weight: 700; }
+.on-opp.vez .on-opp-name { color: var(--yellow); }
+.on-center { display: flex; gap: 18px; justify-content: center; align-items: flex-start; margin: 6px 0 4px; }
+.on-pile { text-align: center; }
+.on-pilecard { position: relative; display: inline-block; }
+.on-plbl { font-size: 11px; margin-top: 6px; opacity: .9; line-height: 1.25; }
+.on-plbl span { opacity: .7; }
+.on-hint { text-align: center; font-size: 13px; margin: 8px 0 2px; background: rgba(255, 255, 255, .12); padding: 6px; border-radius: 10px; }
+.on-jogos { display: flex; gap: 10px; overflow-x: auto; padding: 10px 2px 2px; margin-top: 8px; }
+.on-jogo { display: flex; background: rgba(255, 255, 255, .10); border-radius: 10px; padding: 6px; flex: 0 0 auto; }
+.on-jogo .oncard { margin-left: -10px; }
+.on-jogo .oncard:first-child { margin-left: 0; }
+.on-jogos-vazio { font-size: 12px; opacity: .7; padding: 6px; }
+.on-handwrap { margin: 12px 0 88px; }
+.on-hand-head { display: flex; justify-content: space-between; align-items: center; font-weight: 800; font-size: 14px; margin-bottom: 4px; }
+.on-ordena { display: flex; gap: 6px; }
+.chip.sm { padding: 5px 10px; font-size: 12px; }
+.on-hand { display: flex; justify-content: center; padding: 12px 8px 6px; overflow-x: auto; }
+.on-hand .oncard { margin-left: -14px; flex: 0 0 auto; box-shadow: 0 2px 4px rgba(0, 0, 0, .35); }
+.on-hand .oncard:first-child { margin-left: 0; }
+.on-hand .oncard.sel { transform: translateY(-14px); z-index: 3; }
+
 /* Livro / acordo */
 .livro-row { display: grid; grid-template-columns: 1fr auto; gap: 6px 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .livro-nome { font-weight: 700; font-size: 14px; }

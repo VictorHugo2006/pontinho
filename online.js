@@ -11,12 +11,25 @@
  *                                  o host conseguir distribuir)           *
  * ===================================================================== */
 
-const ONLINE = { code: null, mesa: null, mao: null, unsubMesa: null, unsubMao: null, sel: [] };
+const ONLINE = { code: null, mesa: null, mao: null, unsubMesa: null, unsubMao: null, sel: [], ordem: null };
 
 const ON_NAIPES = ['♠', '♣', '♥', '♦']; // ♠ ♣ ♥ ♦
 const ON_VALORES = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+const ON_RANK = { 'A': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, 'J': 11, 'Q': 12, 'K': 13 };
+const ON_NAIPE_ORD = { '♠': 0, '♥': 1, '♦': 2, '♣': 3 }; // ♠ ♥ ♦ ♣
 
 function onCartaVermelha(s) { return s === '♥' || s === '♦'; }
+
+// Reordena uma cópia da mão para exibição (não altera o que está salvo)
+function onOrdenaMao(cartas) {
+  const cs = cartas.slice();
+  if (ONLINE.ordem === 'naipe') {
+    cs.sort((a, b) => (ON_NAIPE_ORD[a.s] - ON_NAIPE_ORD[b.s]) || (ON_RANK[a.r] - ON_RANK[b.r]));
+  } else if (ONLINE.ordem === 'valor') {
+    cs.sort((a, b) => (ON_RANK[a.r] - ON_RANK[b.r]) || (ON_NAIPE_ORD[a.s] - ON_NAIPE_ORD[b.s]));
+  }
+  return cs;
+}
 
 // Dois baralhos de 52 = 104 cartas, cada uma com id único
 function onBaralho() {
@@ -104,12 +117,13 @@ async function onIniciar() {
   const maos = {};
   m.jogadores.forEach(j => { maos[j.uid] = deck.splice(0, 9); });
   const primeiro = m.jogadores[Math.floor(Math.random() * m.jogadores.length)].uid;
+  const maosCount = {}; m.jogadores.forEach(j => { maosCount[j.uid] = 9; });
   try {
     const batch = fbDB.batch();
     m.jogadores.forEach(j => batch.set(onMaoRef(code, j.uid), { cartas: maos[j.uid] }));
     batch.update(onMesaRef(code), {
       status: 'jogando', coringa, monte: deck, descarte: [], mesaJogos: [],
-      turno: primeiro, fase: 'comprar', vencedor: null,
+      turno: primeiro, fase: 'comprar', vencedor: null, maosCount,
     });
     await batch.commit();
     ONLINE.sel = [];
@@ -123,19 +137,25 @@ async function onComprar(origem) { // 'monte' | 'descarte'
   const m = ONLINE.mesa, code = ONLINE.code;
   if (!onMinhaVez()) { toast('Não é sua vez'); return; }
   if (m.fase !== 'comprar') { toast('Você já comprou — agora descarte'); return; }
-  let carta;
+  let carta, campo, valor;
+  if (origem === 'monte') {
+    if (!m.monte.length) { toast('Monte vazio'); return; }
+    const monte = [...m.monte]; carta = monte.pop(); campo = 'monte'; valor = monte;
+  } else {
+    if (!m.descarte.length) { toast('Descarte vazio'); return; }
+    const d = [...m.descarte]; carta = d.pop(); campo = 'descarte'; valor = d;
+  }
+  const mao = [...((ONLINE.mao && ONLINE.mao.cartas) || []), carta];
+  const maosCount = { ...(m.maosCount || {}), [myUid]: mao.length };
+  // Atualiza a tela na hora (otimista)
+  ONLINE.mesa = { ...m, [campo]: valor, fase: 'descartar', maosCount };
+  ONLINE.mao = { cartas: mao };
+  renderOnline();
   try {
-    if (origem === 'monte') {
-      if (!m.monte.length) { toast('Monte vazio'); return; }
-      const monte = [...m.monte]; carta = monte.pop();
-      await onMesaRef(code).update({ monte, fase: 'descartar' });
-    } else {
-      if (!m.descarte.length) { toast('Descarte vazio'); return; }
-      const d = [...m.descarte]; carta = d.pop();
-      await onMesaRef(code).update({ descarte: d, fase: 'descartar' });
-    }
-    const mao = [...((ONLINE.mao && ONLINE.mao.cartas) || []), carta];
-    await onMaoRef(code, myUid).set({ cartas: mao });
+    const batch = fbDB.batch();
+    batch.update(onMesaRef(code), { [campo]: valor, fase: 'descartar', maosCount });
+    batch.set(onMaoRef(code, myUid), { cartas: mao });
+    await batch.commit();
   } catch (e) { console.warn(e); toast('Erro ao comprar'); }
 }
 
@@ -148,10 +168,16 @@ async function onBaixar() {
   const baixadas = mao.filter(c => selIds.has(c.id));
   const resto = mao.filter(c => !selIds.has(c.id));
   const jogos = [...(m.mesaJogos || []), { id: 'j' + Date.now(), dono: myUid, cartas: baixadas }];
+  const maosCount = { ...(m.maosCount || {}), [myUid]: resto.length };
   ONLINE.sel = [];
+  ONLINE.mesa = { ...m, mesaJogos: jogos, maosCount };
+  ONLINE.mao = { cartas: resto };
+  renderOnline();
   try {
-    await onMaoRef(code, myUid).set({ cartas: resto });
-    await onMesaRef(code).update({ mesaJogos: jogos });
+    const batch = fbDB.batch();
+    batch.set(onMaoRef(code, myUid), { cartas: resto });
+    batch.update(onMesaRef(code), { mesaJogos: jogos, maosCount });
+    await batch.commit();
   } catch (e) { console.warn(e); toast('Erro ao baixar'); }
 }
 
@@ -166,10 +192,17 @@ async function onDescartar() {
   const resto = mao.filter(c => c.id !== cid);
   const idx = m.jogadores.findIndex(j => j.uid === myUid);
   const prox = m.jogadores[(idx + 1) % m.jogadores.length].uid;
+  const descarte = [...(m.descarte || []), carta];
+  const maosCount = { ...(m.maosCount || {}), [myUid]: resto.length };
   ONLINE.sel = [];
+  ONLINE.mesa = { ...m, descarte, turno: prox, fase: 'comprar', maosCount };
+  ONLINE.mao = { cartas: resto };
+  renderOnline();
   try {
-    await onMaoRef(code, myUid).set({ cartas: resto });
-    await onMesaRef(code).update({ descarte: [...(m.descarte || []), carta], turno: prox, fase: 'comprar' });
+    const batch = fbDB.batch();
+    batch.set(onMaoRef(code, myUid), { cartas: resto });
+    batch.update(onMesaRef(code), { descarte, turno: prox, fase: 'comprar', maosCount });
+    await batch.commit();
   } catch (e) { console.warn(e); toast('Erro ao descartar'); }
 }
 
@@ -249,59 +282,91 @@ function onRenderMesa(root) {
   const m = ONLINE.mesa;
   const ehMinha = onMinhaVez();
   const turnoNome = (m.jogadores.find(j => j.uid === m.turno) || {}).nome || '—';
-  const cor = m.coringa ? (onCartaVermelha(m.coringa.s) ? 'os pretos' : 'os vermelhos') : '';
+  const corTxt = m.coringa ? (onCartaVermelha(m.coringa.s) ? 'pretos' : 'vermelhos') : '';
 
-  root.appendChild(el(`
-    <div class="card">
-      <div class="row" style="gap:10px;flex-wrap:wrap;align-items:center">
-        <div>Coringa: <b>${m.coringa ? (m.coringa.r + m.coringa.s) : '—'}</b> <span class="muted" style="font-size:12px">(coringas = ${m.coringa ? m.coringa.r + ' ' + cor : '—'})</span></div>
-        <div class="spacer"></div>
-        <div>Vez: <b>${turnoNome}</b>${ehMinha ? ' <span class="badge" style="background:#b6e3b6">SUA VEZ</span>' : ''}</div>
-      </div>
+  const felt = el('<div class="on-felt"></div>');
+
+  // Cabeçalho da mesa: código + vez
+  felt.appendChild(el(`
+    <div class="on-topbar">
+      <span class="on-code-badge">Mesa ${ONLINE.code}</span>
+      <span class="on-turn ${ehMinha ? 'me' : ''}">${ehMinha ? '🟢 Sua vez' : 'Vez de ' + turnoNome}</span>
     </div>`));
 
-  // Monte + Descarte
-  const linha = el('<div class="row" style="gap:16px;align-items:flex-start;justify-content:center;margin:8px 0"></div>');
-  const monteWrap = el('<div style="text-align:center"></div>');
+  // Adversários (todos menos eu)
+  const opps = el('<div class="on-opps"></div>');
+  const outros = m.jogadores.filter(j => j.uid !== myUid);
+  outros.forEach(j => {
+    const n = (m.maosCount && m.maosCount[j.uid] != null) ? m.maosCount[j.uid] : '';
+    const vez = j.uid === m.turno ? 'vez' : '';
+    opps.appendChild(el(`
+      <div class="on-opp ${vez}">
+        <div class="on-backstack"><span class="on-back">🂠</span><span class="on-count">${n}</span></div>
+        <div class="on-opp-name">${j.nome}</div>
+      </div>`));
+  });
+  felt.appendChild(opps);
+
+  // Centro: coringa • monte • descarte
+  const center = el('<div class="on-center"></div>');
+  // Coringa
+  const pCor = el('<div class="on-pile"></div>');
+  pCor.appendChild(m.coringa ? onCardEl(m.coringa) : el('<div class="oncard vazio">—</div>'));
+  pCor.appendChild(el(`<div class="on-plbl">Coringa<br><span>${m.coringa ? corTxt : ''}</span></div>`));
+  center.appendChild(pCor);
+  // Monte
+  const pMonte = el('<div class="on-pile"></div>');
   const monteBtn = el('<button class="oncard back">🂠</button>');
   monteBtn.addEventListener('click', () => onComprar('monte'));
-  monteWrap.appendChild(monteBtn);
-  monteWrap.appendChild(el(`<div class="muted" style="font-size:12px">Monte (${m.monte.length})</div>`));
-  const descWrap = el('<div style="text-align:center"></div>');
+  const monteC = el('<div class="on-pilecard"></div>');
+  monteC.appendChild(monteBtn); monteC.appendChild(el(`<span class="on-count">${m.monte.length}</span>`));
+  pMonte.appendChild(monteC); pMonte.appendChild(el('<div class="on-plbl">Monte</div>'));
+  center.appendChild(pMonte);
+  // Descarte
+  const pDesc = el('<div class="on-pile"></div>');
   const topo = (m.descarte && m.descarte.length) ? m.descarte[m.descarte.length - 1] : null;
-  if (topo) { descWrap.appendChild(onCardEl(topo, () => onComprar('descarte'))); }
-  else { descWrap.appendChild(el('<button class="oncard vazio">—</button>')); }
-  descWrap.appendChild(el('<div class="muted" style="font-size:12px">Descarte</div>'));
-  linha.appendChild(monteWrap); linha.appendChild(descWrap);
-  root.appendChild(linha);
+  pDesc.appendChild(topo ? onCardEl(topo, () => onComprar('descarte')) : el('<div class="oncard vazio">—</div>'));
+  pDesc.appendChild(el('<div class="on-plbl">Descarte</div>'));
+  center.appendChild(pDesc);
+  felt.appendChild(center);
 
   if (ehMinha) {
-    root.appendChild(el(`<p class="muted" style="text-align:center;font-size:13px">${m.fase === 'comprar' ? '1) Compre do monte ou do descarte' : '2) Baixe jogos (opcional) e descarte 1 carta'}</p>`));
+    felt.appendChild(el(`<div class="on-hint">${m.fase === 'comprar' ? '1) Compre do monte ou do descarte' : '2) Baixe (opcional) e descarte 1 carta'}</div>`));
   }
 
-  // Jogos baixados na mesa
-  const jb = el('<div class="card"><h2>Jogos na mesa</h2></div>');
-  if (!(m.mesaJogos || []).length) jb.appendChild(el('<p class="muted">Nada baixado ainda.</p>'));
-  (m.mesaJogos || []).forEach(g => {
+  // Jogos baixados
+  const jogos = m.mesaJogos || [];
+  const jb = el('<div class="on-jogos"></div>');
+  if (!jogos.length) jb.appendChild(el('<div class="on-jogos-vazio">Nenhum jogo baixado ainda</div>'));
+  jogos.forEach(g => {
     const dono = (m.jogadores.find(j => j.uid === g.dono) || {}).nome || '';
-    const row = el(`<div style="margin:6px 0"><div class="muted" style="font-size:11px">${dono}</div><div class="row" style="gap:4px;flex-wrap:wrap"></div></div>`);
-    const cont = row.querySelector('.row');
-    g.cartas.forEach(c => cont.appendChild(onCardEl(c)));
-    jb.appendChild(row);
+    const grp = el(`<div class="on-jogo" title="${dono}"></div>`);
+    g.cartas.forEach(c => grp.appendChild(onCardEl(c)));
+    jb.appendChild(grp);
   });
-  root.appendChild(jb);
+  felt.appendChild(jb);
 
-  // Minha mão
-  const mao = (ONLINE.mao && ONLINE.mao.cartas) || [];
-  const mh = el(`<div class="card"><h2>Sua mão (${mao.length})</h2></div>`);
-  const grid = el('<div class="row" style="gap:6px;flex-wrap:wrap"></div>');
-  mao.forEach(c => grid.appendChild(onCardEl(c, () => {
+  root.appendChild(felt);
+
+  // Minha mão (em leque) + Ordenar
+  const mao = onOrdenaMao((ONLINE.mao && ONLINE.mao.cartas) || []);
+  const hw = el('<div class="on-handwrap"></div>');
+  const head = el(`<div class="on-hand-head"><span>Sua mão (${mao.length})</span><span class="on-ordena"></span></div>`);
+  const ord = head.querySelector('.on-ordena');
+  const bN = el(`<button class="chip sm ${ONLINE.ordem === 'naipe' ? 'on' : ''}">♠ Naipe</button>`);
+  bN.addEventListener('click', () => { ONLINE.ordem = ONLINE.ordem === 'naipe' ? null : 'naipe'; renderOnline(); });
+  const bV = el(`<button class="chip sm ${ONLINE.ordem === 'valor' ? 'on' : ''}">🔢 Seq.</button>`);
+  bV.addEventListener('click', () => { ONLINE.ordem = ONLINE.ordem === 'valor' ? null : 'valor'; renderOnline(); });
+  ord.appendChild(bN); ord.appendChild(bV);
+  hw.appendChild(head);
+  const hand = el('<div class="on-hand"></div>');
+  mao.forEach(c => hand.appendChild(onCardEl(c, () => {
     const i = ONLINE.sel.indexOf(c.id);
     if (i >= 0) ONLINE.sel.splice(i, 1); else ONLINE.sel.push(c.id);
     renderOnline();
   })));
-  mh.appendChild(grid);
-  root.appendChild(mh);
+  hw.appendChild(hand);
+  root.appendChild(hw);
 
   // Barra de ações
   const bar = el('<div class="fab-bar"></div>');
