@@ -303,23 +303,43 @@ async function onEncaixar(groupId) {
   const g = jogos.find(x => x.id === groupId); if (!g) return;
   const combinado = [...g.cartas, ...add];
   const val = onJogoValido(combinado, m.coringa);
-  if (!val.ok) { toast('Não encaixa aqui: ' + val.msg); return; }
-  g.cartas = onArrumaJogo(combinado, m.coringa);
   const resto = mao.filter(c => !selIds.has(c.id));
   const maosCount = { ...(m.maosCount || {}), [myUid]: resto.length };
   const bateu = resto.length === 0;
   const extra = bateu ? { status: 'encerrada', vencedor: myUid } : {};
+
+  let upd, msg;
+  if (val.ok) {
+    // Encaixe normal
+    g.cartas = onArrumaJogo(combinado, m.coringa);
+    upd = { mesaJogos: jogos, maosCount, ...extra };
+    msg = 'Encaixou!';
+  } else {
+    // QUEIMA: jogo é trinca e as cartas têm o MESMO valor da trinca (carta morta)
+    const gVal = onJogoValido(g.cartas, m.coringa);
+    const rankTrinca = g.cartas[0] && g.cartas[0].r;
+    const todasMesmoValor = add.every(c => c.r === rankTrinca);
+    if (gVal.tipo === 'trinca' && todasMesmoValor) {
+      const lixo = [...(m.lixo || []), ...add];
+      upd = { lixo, maosCount, ...extra };
+      msg = 'Queimou! 🔥';
+    } else {
+      toast('Não encaixa aqui: ' + val.msg);
+      return;
+    }
+  }
+
   ONLINE.sel = [];
-  ONLINE.mesa = { ...m, mesaJogos: jogos, maosCount, ...extra };
+  ONLINE.mesa = { ...m, ...upd };
   ONLINE.mao = { cartas: resto };
   renderOnline();
-  if (bateu) toast('Você bateu! 🎉'); else toast('Encaixou!');
+  if (bateu) toast('Você bateu! 🎉'); else toast(msg);
   try {
     const batch = fbDB.batch();
     batch.set(onMaoRef(code, myUid), { cartas: resto });
-    batch.update(onMesaRef(code), { mesaJogos: jogos, maosCount, ...extra });
+    batch.update(onMesaRef(code), upd);
     await batch.commit();
-  } catch (e) { console.warn(e); toast('Erro ao encaixar'); }
+  } catch (e) { console.warn(e); toast('Erro na jogada'); }
 }
 
 // Queimar (lixo): tira 1 carta selecionada da mão e joga fora de jogo
@@ -558,20 +578,17 @@ async function onReportarPontos() {
   catch (e) { console.warn('reportar pontos', e); }
 }
 
-// Alterna tela cheia de verdade e trava em paisagem (deitado) no Android
+// Alterna a trava de orientação em paisagem (deitado). NÃO usa tela cheia,
+// para não disparar a mensagem do navegador "arraste para sair da tela cheia".
 async function onToggleFull() {
   try {
-    if (!document.fullscreenElement) {
-      const d = document.documentElement;
-      const req = d.requestFullscreen || d.webkitRequestFullscreen;
-      if (req) { try { await req.call(d); } catch (_) {} }
-      try { if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape'); } catch (_) {}
+    if (screen.orientation && screen.orientation.lock) {
+      if (ONLINE._deitado) { try { screen.orientation.unlock(); } catch (_) {} ONLINE._deitado = false; }
+      else { await screen.orientation.lock('landscape'); ONLINE._deitado = true; }
     } else {
-      try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (_) {}
-      const exit = document.exitFullscreen || document.webkitExitFullscreen;
-      if (exit) { try { await exit.call(document); } catch (_) {} }
+      toast('Gire o celular para deitar a tela');
     }
-  } catch (_) {}
+  } catch (_) { toast('Gire o celular para deitar a tela'); }
 }
 
 function onRenderFim(root) {
