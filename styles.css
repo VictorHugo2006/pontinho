@@ -364,6 +364,40 @@ table.board .money.zero { color: var(--muted); }
 .on-jogos { min-height: 54px; }
 .oncard.alvo { outline: 3px solid var(--yellow); box-shadow: 0 0 12px rgba(255, 233, 84, .6); }
 
+/* ---------- Estilo "mesa em volta" (Mega Jogos) ---------- */
+.on-curingas { background: rgba(0, 0, 0, .28); padding: 4px 10px; border-radius: 8px; font-size: 11px; font-weight: 700; letter-spacing: .5px; }
+.on-curingas b { font-size: 15px; margin-left: 3px; }
+.on-curingas b.red { color: #ff9a9a; }
+.on-curingas b.blk { color: #fff; }
+.on-table { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 6px 0; }
+.on-fan { position: relative; display: inline-flex; }
+.on-mini { width: 26px; height: 38px; border-radius: 5px; background: #2f6fd0; border: 1.5px solid rgba(255, 255, 255, .55); margin-left: -13px; }
+.on-mini:first-child { margin-left: 0; }
+.on-opp.vez .on-mini { border-color: var(--yellow); }
+.on-pilecard.on-deck { box-shadow: 3px 3px 0 rgba(255, 255, 255, .18), 6px 6px 0 rgba(255, 255, 255, .10); border-radius: 9px; }
+.on-lixo { width: 46px; height: 64px; border: 2px dashed rgba(255, 255, 255, .55); background: rgba(0, 0, 0, .15); border-radius: 9px; color: #fff; font-size: 24px; position: relative; cursor: pointer; }
+.on-lixo.alvo { outline: 3px solid var(--yellow); border-color: var(--yellow); }
+
+/* Compactação quando deitado (pouca altura) para caber tudo na tela */
+@media (max-height: 500px) {
+  .oncard { min-width: 40px; height: 54px; font-size: 15px; }
+  .oncard .np { font-size: 13px; margin-top: 1px; }
+  .oncard.back { font-size: 22px; }
+  .on-back { width: 36px; height: 50px; font-size: 20px; }
+  .on-mini { width: 22px; height: 32px; }
+  .on-lixo { width: 40px; height: 54px; font-size: 20px; }
+  .on-table { gap: 6px; padding: 2px 0; }
+  .on-center { gap: 16px; }
+  .on-plbl { font-size: 10px; margin-top: 3px; }
+  .on-hint { padding: 3px 6px; font-size: 11px; margin: 4px 0 0; }
+  .on-jogoswrap { padding: 3px; }
+  .on-jogos { min-height: 40px; }
+  .on-hand { gap: 4px; padding: 6px 6px 2px; }
+  .on-hand-head { font-size: 12px; margin-bottom: 2px; }
+  .on-topbar { margin-bottom: 4px; }
+  .on-opp-name { font-size: 11px; margin-top: 4px; }
+}
+
 /* Livro / acordo */
 .livro-row { display: grid; grid-template-columns: 1fr auto; gap: 6px 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .livro-nome { font-weight: 700; font-size: 14px; }

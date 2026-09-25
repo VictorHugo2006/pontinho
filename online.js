@@ -221,6 +221,40 @@ async function onBati() {
   catch (e) { console.warn(e); toast('Erro ao bater'); }
 }
 
+// Curingas = as duas cartas do mesmo valor, na COR OPOSTA à carta virada
+function onCuringas(cor) {
+  if (!cor) return [];
+  return onCartaVermelha(cor.s)
+    ? [{ r: cor.r, s: '♠' }, { r: cor.r, s: '♣' }]  // virou vermelha → pretos
+    : [{ r: cor.r, s: '♥' }, { r: cor.r, s: '♦' }]; // virou preta → vermelhos
+}
+
+// Queimar (lixo): tira 1 carta selecionada da mão e joga fora de jogo
+async function onQueimar() {
+  const m = ONLINE.mesa, code = ONLINE.code;
+  if (!onMinhaVez()) { toast('Não é sua vez'); return; }
+  if (ONLINE.sel.length !== 1) { toast('Selecione 1 carta para queimar'); return; }
+  const cid = ONLINE.sel[0];
+  const mao = (ONLINE.mao && ONLINE.mao.cartas) || [];
+  const carta = mao.find(c => c.id === cid); if (!carta) return;
+  const resto = mao.filter(c => c.id !== cid);
+  const lixo = [...(m.lixo || []), carta];
+  const maosCount = { ...(m.maosCount || {}), [myUid]: resto.length };
+  const bateu = resto.length === 0;
+  const extra = bateu ? { status: 'encerrada', vencedor: myUid } : {};
+  ONLINE.sel = [];
+  ONLINE.mesa = { ...m, lixo, maosCount, ...extra };
+  ONLINE.mao = { cartas: resto };
+  renderOnline();
+  if (bateu) toast('Você bateu! 🎉'); else toast('Carta queimada');
+  try {
+    const batch = fbDB.batch();
+    batch.set(onMaoRef(code, myUid), { cartas: resto });
+    batch.update(onMesaRef(code), { lixo, maosCount, ...extra });
+    await batch.commit();
+  } catch (e) { console.warn(e); toast('Erro ao queimar'); }
+}
+
 /* ------------------------------ Render --------------------------------- */
 function onCardEl(c, onClick) {
   const cls = onCartaVermelha(c.s) ? 'red' : 'black';
@@ -292,15 +326,22 @@ function onRenderMesa(root) {
   const turnoNome = (m.jogadores.find(j => j.uid === m.turno) || {}).nome || '—';
   const corTxt = m.coringa ? (onCartaVermelha(m.coringa.s) ? 'pretos' : 'vermelhos') : '';
 
-  const screen = el('<div class="on-screen"></div>');
+  const screen = el('<div class="on-screen land"></div>');
   const felt = el('<div class="on-felt"></div>');
+  const outros = m.jogadores.filter(j => j.uid !== myUid);
+  const armado = ehMinha && ONLINE.sel.length > 0;
 
-  // Cabeçalho da mesa: código + vez + botões (tela cheia / sair)
+  // Cabeçalho: CURINGAS (esq) · vez (centro) · código + botões (dir)
+  const wilds = onCuringas(m.coringa);
+  const wildsHtml = wilds.length
+    ? wilds.map(w => `<b class="${onCartaVermelha(w.s) ? 'red' : 'blk'}">${w.r}${w.s}</b>`).join(' ')
+    : '—';
   const topbar = el(`
     <div class="on-topbar">
-      <span class="on-code-badge">Mesa ${ONLINE.code}</span>
+      <span class="on-curingas">CURINGAS ${wildsHtml}</span>
       <span class="on-turn ${ehMinha ? 'me' : ''}">${ehMinha ? '🟢 Sua vez' : 'Vez de ' + turnoNome}</span>
       <span class="on-topbtns">
+        <span class="on-code-badge">${ONLINE.code}</span>
         <button class="on-icon" id="on-full" title="Tela cheia">⛶</button>
         <button class="on-icon" id="on-sair" title="Sair da mesa">✕</button>
       </span>
@@ -309,59 +350,64 @@ function onRenderMesa(root) {
   topbar.querySelector('#on-sair').addEventListener('click', onSairMesa);
   felt.appendChild(topbar);
 
-  // Adversários (todos menos eu)
+  // Área da mesa (verde): adversários em volta (topo) + centro com montes
+  const table = el('<div class="on-table"></div>');
+
+  // Adversários — leque de cartas viradas + contagem + nome
   const opps = el('<div class="on-opps"></div>');
-  const outros = m.jogadores.filter(j => j.uid !== myUid);
   outros.forEach(j => {
     const n = (m.maosCount && m.maosCount[j.uid] != null) ? m.maosCount[j.uid] : '';
     const vez = j.uid === m.turno ? 'vez' : '';
     opps.appendChild(el(`
       <div class="on-opp ${vez}">
-        <div class="on-backstack"><span class="on-back">🂠</span><span class="on-count">${n}</span></div>
+        <div class="on-fan"><span class="on-mini"></span><span class="on-mini"></span><span class="on-mini"></span><span class="on-count">${n}</span></div>
         <div class="on-opp-name">${j.nome}</div>
       </div>`));
   });
-  felt.appendChild(opps);
+  table.appendChild(opps);
 
-  // Centro: coringa • monte • descarte
+  // Centro: Monte · Descarte · Lixo
   const center = el('<div class="on-center"></div>');
-  // Coringa
-  const pCor = el('<div class="on-pile"></div>');
-  pCor.appendChild(m.coringa ? onCardEl(m.coringa) : el('<div class="oncard vazio">—</div>'));
-  pCor.appendChild(el(`<div class="on-plbl">Coringa<br><span>${m.coringa ? corTxt : ''}</span></div>`));
-  center.appendChild(pCor);
   // Monte
   const pMonte = el('<div class="on-pile"></div>');
   const monteBtn = el('<button class="oncard back">🂠</button>');
   monteBtn.addEventListener('click', () => onComprar('monte'));
-  const monteC = el('<div class="on-pilecard"></div>');
+  const monteC = el('<div class="on-pilecard on-deck"></div>');
   monteC.appendChild(monteBtn); monteC.appendChild(el(`<span class="on-count">${m.monte.length}</span>`));
   pMonte.appendChild(monteC); pMonte.appendChild(el('<div class="on-plbl">Monte</div>'));
   center.appendChild(pMonte);
-  // Descarte — toque para COMPRAR (fase comprar) ou JOGAR FORA (fase descartar)
+  // Descarte — comprar (fase comprar) ou jogar fora (fase descartar)
   const pDesc = el('<div class="on-pile"></div>');
   const topo = (m.descarte && m.descarte.length) ? m.descarte[m.descarte.length - 1] : null;
-  const descarteAlvo = ehMinha && m.fase === 'descartar'; // vai jogar fora aqui
+  const descarteAlvo = ehMinha && m.fase === 'descartar';
   const descCard = topo ? onCardEl(topo) : el('<div class="oncard vazio">—</div>');
   if (descarteAlvo && ONLINE.sel.length === 1) descCard.classList.add('alvo');
   descCard.addEventListener('click', () => { if (m.fase === 'comprar') onComprar('descarte'); else onDescartar(); });
   pDesc.appendChild(descCard);
   pDesc.appendChild(el(`<div class="on-plbl">${descarteAlvo ? '👉 Jogar aqui' : 'Descarte'}</div>`));
   center.appendChild(pDesc);
-  felt.appendChild(center);
+  // Lixo (queima) — toque com 1 carta selecionada para queimar
+  const pLixo = el('<div class="on-pile"></div>');
+  const lixoBtn = el(`<button class="on-lixo ${armado ? 'alvo' : ''}">🗑<span class="on-count">${(m.lixo || []).length}</span></button>`);
+  lixoBtn.addEventListener('click', () => { if (ONLINE.sel.length === 1) onQueimar(); else toast('Selecione 1 carta para queimar'); });
+  pLixo.appendChild(lixoBtn);
+  pLixo.appendChild(el('<div class="on-plbl">Lixo (queima)</div>'));
+  center.appendChild(pLixo);
+  table.appendChild(center);
+
+  felt.appendChild(table);
 
   if (ehMinha) {
     const dica = m.fase === 'comprar'
       ? 'Toque no <b>Monte</b> ou no <b>Descarte</b> para comprar'
-      : 'Baixar: selecione e toque na <b>mesa</b> · Jogar fora: selecione 1 e toque no <b>Descarte</b>';
+      : 'Baixar: selecione e toque na <b>mesa</b> · Jogar fora: toque no <b>Descarte</b> · Queimar: toque no <b>Lixo</b>';
     felt.appendChild(el(`<div class="on-hint">${dica}</div>`));
   }
 
-  // Jogos baixados — toque na área para BAIXAR as cartas selecionadas
+  // Jogos baixados — toque na área para BAIXAR as selecionadas
   const jogos = m.mesaJogos || [];
   const jbWrap = el('<div class="on-jogoswrap"></div>');
-  const armado = ehMinha && ONLINE.sel.length > 0;
-  jbWrap.appendChild(el(`<div class="on-jogos-hint">${ehMinha ? (armado ? '⬇️ Toque para BAIXAR as ' + ONLINE.sel.length + ' selecionadas' : 'Jogos na mesa — toque aqui p/ baixar as selecionadas') : 'Jogos na mesa'}</div>`));
+  jbWrap.appendChild(el(`<div class="on-jogos-hint">${ehMinha ? (armado ? '⬇️ Toque para BAIXAR as ' + ONLINE.sel.length + ' selecionadas' : 'Jogos na mesa — toque aqui p/ baixar') : 'Jogos na mesa'}</div>`));
   const jb = el('<div class="on-jogos"></div>');
   if (!jogos.length) jb.appendChild(el('<div class="on-jogos-vazio">Nenhum jogo baixado ainda</div>'));
   jogos.forEach(g => {
