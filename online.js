@@ -60,7 +60,7 @@ function onEntrarSub(code) {
   onLimpaSubs();
   ONLINE.code = code; ONLINE.sel = []; ONLINE.mesa = null; ONLINE.mao = null;
   ONLINE.unsubMesa = onMesaRef(code).onSnapshot(
-    s => { ONLINE.mesa = s.exists ? s.data() : null; if (currentScreen === 'online') renderOnline(); },
+    s => { ONLINE.mesa = s.exists ? s.data() : null; onReportarPontos(); if (currentScreen === 'online') renderOnline(); },
     e => { console.warn('mesa snap', e); toast('Erro de conexão (veja as Regras do Firestore)'); }
   );
   ONLINE.unsubMao = onMaoRef(code, myUid).onSnapshot(
@@ -118,12 +118,18 @@ async function onIniciar() {
   m.jogadores.forEach(j => { maos[j.uid] = deck.splice(0, 9); });
   const primeiro = m.jogadores[Math.floor(Math.random() * m.jogadores.length)].uid;
   const maosCount = {}; m.jogadores.forEach(j => { maosCount[j.uid] = 9; });
+  // Acumula os pontos da mão anterior no total da partida
+  const totaisAntes = m.pontosTotais || {};
+  const ph = m.pontosHand || {};
+  const pontosTotais = {};
+  m.jogadores.forEach(j => { pontosTotais[j.uid] = (totaisAntes[j.uid] || 0) + (ph[j.uid] || 0); });
   try {
     const batch = fbDB.batch();
     m.jogadores.forEach(j => batch.set(onMaoRef(code, j.uid), { cartas: maos[j.uid] }));
     batch.update(onMesaRef(code), {
-      status: 'jogando', coringa, monte: deck, descarte: [], mesaJogos: [],
+      status: 'jogando', coringa, monte: deck, descarte: [], lixo: [], mesaJogos: [],
       turno: primeiro, fase: 'comprar', vencedor: null, maosCount,
+      pontosTotais, pontosHand: {},
     });
     await batch.commit();
     ONLINE.sel = [];
@@ -449,6 +455,7 @@ function onRenderMesa(root) {
       <div class="on-opp ${vez}">
         <div class="on-fan"><span class="on-mini"></span><span class="on-mini"></span><span class="on-mini"></span><span class="on-count">${n}</span></div>
         <div class="on-opp-name">${j.nome}</div>
+        <div class="on-opp-pts">${(m.pontosTotais && m.pontosTotais[j.uid]) || 0} pts</div>
       </div>`));
   });
   table.appendChild(opps);
@@ -510,7 +517,7 @@ function onRenderMesa(root) {
   // Minha mão (em leque) + Ordenar
   const mao = onOrdenaMao((ONLINE.mao && ONLINE.mao.cartas) || []);
   const hw = el('<div class="on-handwrap"></div>');
-  const head = el(`<div class="on-hand-head"><span>Sua mão (${mao.length})</span><span class="on-ordena"></span></div>`);
+  const head = el(`<div class="on-hand-head"><span>Sua mão (${mao.length}) · ${(m.pontosTotais && m.pontosTotais[myUid]) || 0} pts</span><span class="on-ordena"></span></div>`);
   const ord = head.querySelector('.on-ordena');
   const bN = el(`<button class="chip sm ${ONLINE.ordem === 'naipe' ? 'on' : ''}">♠ Naipe</button>`);
   bN.addEventListener('click', () => { ONLINE.ordem = ONLINE.ordem === 'naipe' ? null : 'naipe'; renderOnline(); });
@@ -528,6 +535,27 @@ function onRenderMesa(root) {
   screen.appendChild(hw);
 
   root.appendChild(screen);
+}
+
+// Valor de uma carta para contagem de pontos
+function onValorCarta(c, cor) {
+  if (onEhCoringa(c, cor)) return 20;
+  if (c.r === 'A') return 15;
+  if (c.r === 'K' || c.r === 'Q' || c.r === 'J') return 10;
+  return Number(c.r) || 0; // 2..10
+}
+function onPontosMao(cartas, cor) { return (cartas || []).reduce((s, c) => s + onValorCarta(c, cor), 0); }
+
+// Ao fim da mão, cada jogador reporta os pontos da PRÓPRIA mão (as mãos são privadas)
+async function onReportarPontos() {
+  const m = ONLINE.mesa, code = ONLINE.code;
+  if (!m || m.status !== 'encerrada') return;
+  if (!m.jogadores.some(j => j.uid === myUid)) return;      // espectador não pontua
+  if (m.pontosHand && m.pontosHand[myUid] !== undefined) return; // já reportei
+  const mao = (ONLINE.mao && ONLINE.mao.cartas) || [];
+  const pts = onPontosMao(mao, m.coringa);
+  try { await onMesaRef(code).update({ ['pontosHand.' + myUid]: pts }); }
+  catch (e) { console.warn('reportar pontos', e); }
 }
 
 // Alterna tela cheia de verdade e trava em paisagem (deitado) no Android
@@ -549,15 +577,43 @@ async function onToggleFull() {
 function onRenderFim(root) {
   const m = ONLINE.mesa;
   const v = m.jogadores.find(j => j.uid === m.vencedor);
+  const ph = m.pontosHand || {};
+  const tot = m.pontosTotais || {};
   root.appendChild(el(`
     <div class="card" style="text-align:center;background:var(--green)">
       <h2>🏆 ${v ? v.nome : '—'} bateu!</h2>
-      <p class="muted">Mão encerrada. A contagem de pontos e o dinheiro entram na Fase 2.</p>
+      <p class="muted">Pontos desta mão (quem bate faz 0). Total acumulado na partida.</p>
     </div>`));
+
+  // Placar: pontos da mão + total (mostra "…" enquanto alguém ainda não reportou)
+  const card = el('<div class="card"><h2>Pontos da mão</h2></div>');
+  const linhas = m.jogadores.map(j => {
+    const reportou = ph[j.uid] !== undefined;
+    const ptsMao = reportou ? ph[j.uid] : null;
+    const total = (tot[j.uid] || 0) + (ph[j.uid] || 0);
+    return { j, ptsMao, total, reportou, estourou: total >= 100 };
+  }).sort((a, b) => a.total - b.total);
+  linhas.forEach(x => {
+    const venceu = x.j.uid === m.vencedor;
+    card.appendChild(el(`
+      <div class="jog-row">
+        <div class="jog-info">
+          <div class="jog-name">${venceu ? '🏆 ' : ''}${x.j.nome}${x.j.uid === myUid ? ' <span class="muted">(você)</span>' : ''}${x.estourou ? ' <span class="badge" style="background:#f6d6d6;color:#b00">estourou 100</span>' : ''}</div>
+          <div class="muted jog-stats">Mão: ${x.ptsMao === null ? '…' : x.ptsMao} pts</div>
+        </div>
+        <div style="font-weight:800;font-size:18px">${x.total}</div>
+      </div>`));
+  });
+  const faltam = m.jogadores.filter(j => ph[j.uid] === undefined).length;
+  if (faltam) card.appendChild(el(`<p class="muted" style="font-size:12px">Aguardando ${faltam} jogador(es) confirmarem os pontos…</p>`));
+  root.appendChild(card);
+
   if (m.hostUid === myUid) {
     const nb = el('<button class="btn primary full" style="margin-top:10px">Nova mão</button>');
     nb.addEventListener('click', onIniciar);
     root.appendChild(nb);
+  } else {
+    root.appendChild(el('<p class="muted" style="text-align:center;margin-top:10px">Aguardando o host começar a próxima mão…</p>'));
   }
   const sair = el('<button class="btn ghost sm full" style="margin-top:10px">Sair da mesa</button>');
   sair.addEventListener('click', onSairMesa);

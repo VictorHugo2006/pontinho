@@ -326,6 +326,7 @@ table.board .money.zero { color: var(--muted); }
 }
 .on-opp-name { font-size: 12px; margin-top: 8px; font-weight: 700; }
 .on-opp.vez .on-opp-name { color: var(--yellow); }
+.on-opp-pts { font-size: 11px; opacity: .8; }
 .on-center { display: flex; gap: 18px; justify-content: center; align-items: flex-start; margin: 6px 0 4px; }
 .on-pile { text-align: center; }
 .on-pilecard { position: relative; display: inline-block; }
