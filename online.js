@@ -314,42 +314,56 @@ async function onEncaixar(groupId) {
   const add = mao.filter(c => selIds.has(c.id));
   const jogos = (m.mesaJogos || []).map(g => ({ ...g, cartas: [...g.cartas] }));
   const g = jogos.find(x => x.id === groupId); if (!g) return;
-  const combinado = [...g.cartas, ...add];
-  const resto = mao.filter(c => !selIds.has(c.id));
-  const maosCount = { ...(m.maosCount || {}), [myUid]: resto.length };
-  const bateu = resto.length === 0;
-  const val = onJogoValido(combinado, m.coringa, bateu);
-  const extra = bateu ? { status: 'encerrada', vencedor: myUid } : {};
 
-  let upd, msg;
-  if (val.ok) {
-    // Encaixe normal
-    g.cartas = onArrumaJogo(combinado, m.coringa);
-    upd = { mesaJogos: jogos, maosCount, ...extra };
-    msg = 'Encaixou!';
-  } else {
-    // QUEIMA: jogo é trinca e as cartas têm o MESMO valor da trinca (carta morta)
-    const gVal = onJogoValido(g.cartas, m.coringa);
-    const rankTrinca = g.cartas[0] && g.cartas[0].r;
-    const todasMesmoValor = add.every(c => c.r === rankTrinca);
-    if (gVal.tipo === 'trinca' && todasMesmoValor) {
-      const lixo = [...(m.lixo || []), ...add];
-      upd = { lixo, maosCount, ...extra };
-      msg = 'Queimou! 🔥';
-    } else {
-      toast('Não encaixa aqui: ' + val.msg);
-      return;
+  let novaMao = mao.filter(c => !selIds.has(c.id)); // mão sem as selecionadas
+  let lixoUpd = null, msg = '', done = false;
+
+  // 1) Encaixe normal
+  {
+    const bateuTmp = novaMao.length === 0;
+    const combinado = [...g.cartas, ...add];
+    if (onJogoValido(combinado, m.coringa, bateuTmp).ok) {
+      g.cartas = onArrumaJogo(combinado, m.coringa);
+      msg = 'Encaixou!'; done = true;
     }
   }
+  // 2) Roubar o coringa: sua carta real ocupa o lugar de um coringa; o coringa volta pra sua mão
+  if (!done && add.length >= 1) {
+    for (let k = 0; k < g.cartas.length && !done; k++) {
+      if (!onEhCoringa(g.cartas[k], m.coringa)) continue;
+      const novo = g.cartas.slice(); const cor1 = novo.splice(k, 1)[0]; novo.push(...add);
+      if (onJogoValido(novo, m.coringa, false).ok) {
+        g.cartas = onArrumaJogo(novo, m.coringa);
+        novaMao = [...novaMao, cor1]; // coringa volta pra mão (obrigatório usá-lo depois)
+        msg = 'Roubou o coringa! 🃏 Agora baixe ele.'; done = true;
+      }
+    }
+  }
+  // 3) Queima: jogo é trinca e as cartas têm o MESMO valor (carta morta)
+  if (!done) {
+    const gTipo = onJogoValido(g.cartas, m.coringa, true).tipo;
+    const rankTrinca = g.cartas[0] && g.cartas[0].r;
+    if (gTipo === 'trinca' && add.every(c => c.r === rankTrinca)) {
+      lixoUpd = [...(m.lixo || []), ...add];
+      msg = 'Queimou! 🔥'; done = true;
+    }
+  }
+  if (!done) { toast('Não encaixa aqui: coringa só no meio (ponta só pra bater)'); return; }
+
+  const maosCount = { ...(m.maosCount || {}), [myUid]: novaMao.length };
+  const bateu = novaMao.length === 0;
+  const extra = bateu ? { status: 'encerrada', vencedor: myUid } : {};
+  const upd = { mesaJogos: jogos, maosCount, ...extra };
+  if (lixoUpd) upd.lixo = lixoUpd;
 
   ONLINE.sel = [];
   ONLINE.mesa = { ...m, ...upd };
-  ONLINE.mao = { cartas: resto };
+  ONLINE.mao = { cartas: novaMao };
   renderOnline();
   if (bateu) toast('Você bateu! 🎉'); else toast(msg);
   try {
     const batch = fbDB.batch();
-    batch.set(onMaoRef(code, myUid), { cartas: resto });
+    batch.set(onMaoRef(code, myUid), { cartas: novaMao });
     batch.update(onMesaRef(code), upd);
     await batch.commit();
   } catch (e) { console.warn(e); toast('Erro na jogada'); }
