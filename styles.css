@@ -332,19 +332,19 @@ table.board .money.zero { color: var(--muted); }
 .on-plbl { font-size: 11px; margin-top: 6px; opacity: .9; line-height: 1.25; }
 .on-plbl span { opacity: .7; }
 .on-hint { text-align: center; font-size: 13px; margin: 8px 0 2px; background: rgba(255, 255, 255, .12); padding: 6px; border-radius: 10px; }
-.on-jogos { display: flex; gap: 10px; overflow-x: auto; padding: 10px 2px 2px; margin-top: 8px; }
+.on-jogos { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 2px 2px; margin-top: 4px; }
 .on-jogo { display: flex; background: rgba(255, 255, 255, .10); border-radius: 10px; padding: 6px; flex: 0 0 auto; }
-.on-jogo .oncard { margin-left: -10px; }
+.on-jogo .oncard { margin-left: -8px; }
 .on-jogo .oncard:first-child { margin-left: 0; }
 .on-jogos-vazio { font-size: 12px; opacity: .7; padding: 6px; }
 .on-handwrap { margin: 12px 0 88px; }
 .on-hand-head { display: flex; justify-content: space-between; align-items: center; font-weight: 800; font-size: 14px; margin-bottom: 4px; }
 .on-ordena { display: flex; gap: 6px; }
 .chip.sm { padding: 5px 10px; font-size: 12px; }
-.on-hand { display: flex; justify-content: center; padding: 12px 8px 6px; overflow-x: auto; }
-.on-hand .oncard { margin-left: -14px; flex: 0 0 auto; box-shadow: 0 2px 4px rgba(0, 0, 0, .35); }
-.on-hand .oncard:first-child { margin-left: 0; }
-.on-hand .oncard.sel { transform: translateY(-14px); z-index: 3; }
+/* Mão: cartas lado a lado (sem sobrepor), quebrando linha — a carta inteira é tocável */
+.on-hand { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; padding: 10px 8px 6px; }
+.on-hand .oncard { flex: 0 0 auto; box-shadow: 0 2px 4px rgba(0, 0, 0, .35); }
+.on-hand .oncard.sel { transform: translateY(-8px); z-index: 3; }
 
 /* Mesa em tela cheia: felt rola no meio, mão + ações sempre visíveis embaixo */
 .on-screen { position: fixed; inset: 0; z-index: 45; background: #0a4f2b; display: flex; flex-direction: column; }
