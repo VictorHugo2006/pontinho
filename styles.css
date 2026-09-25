@@ -348,7 +348,7 @@ table.board .money.zero { color: var(--muted); }
 
 /* Mesa em tela cheia: felt rola no meio, mão + ações sempre visíveis embaixo */
 .on-screen { position: fixed; inset: 0; z-index: 45; background: #0a4f2b; display: flex; flex-direction: column; }
-.on-screen .on-felt { flex: 1 1 auto; overflow-y: auto; border-radius: 0; margin: 0; box-shadow: inset 0 0 40px rgba(0, 0, 0, .25); }
+.on-screen .on-felt { flex: 1 1 auto; display: flex; flex-direction: column; overflow: hidden; border-radius: 0; margin: 0; box-shadow: inset 0 0 40px rgba(0, 0, 0, .25); }
 .on-screen .on-handwrap { flex: 0 0 auto; margin: 0; background: #0a3f22; padding: 6px 10px calc(8px + env(safe-area-inset-bottom, 0px)); }
 .on-screen .on-hand-head { color: #eafff0; }
 .on-actions { flex: 0 0 auto; display: flex; gap: 10px; padding: 10px 12px calc(12px + env(safe-area-inset-bottom, 0px)); background: #08351d; }
@@ -357,7 +357,7 @@ table.board .money.zero { color: var(--muted); }
 .on-icon { background: rgba(255, 255, 255, .18); color: #fff; border: none; border-radius: 8px; width: 34px; height: 30px; font-size: 15px; font-weight: 800; cursor: pointer; }
 
 /* Alvos de toque: baixar na mesa / jogar no descarte */
-.on-jogoswrap { margin-top: 8px; border-radius: 12px; padding: 6px; transition: background .15s; }
+.on-jogoswrap { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin-top: 8px; border-radius: 12px; padding: 6px; transition: background .15s; }
 .on-jogoswrap.armado { background: rgba(255, 233, 84, .14); outline: 2px dashed var(--yellow); cursor: pointer; }
 .on-jogos-hint { font-size: 12px; opacity: .85; margin: 2px 4px 6px; }
 .on-jogoswrap.armado .on-jogos-hint { color: var(--yellow); opacity: 1; font-weight: 800; }
@@ -369,37 +369,49 @@ table.board .money.zero { color: var(--muted); }
 .on-curingas b { font-size: 15px; margin-left: 3px; }
 .on-curingas b.red { color: #ff9a9a; }
 .on-curingas b.blk { color: #fff; }
-.on-table { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 6px 0; }
+.on-table { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 6px 0; }
 .on-fan { position: relative; display: inline-flex; }
 .on-mini { width: 26px; height: 38px; border-radius: 5px; background: #2f6fd0; border: 1.5px solid rgba(255, 255, 255, .55); margin-left: -13px; }
 .on-mini:first-child { margin-left: 0; }
 .on-opp.vez .on-mini { border-color: var(--yellow); }
 .on-pilecard.on-deck { box-shadow: 3px 3px 0 rgba(255, 255, 255, .18), 6px 6px 0 rgba(255, 255, 255, .10); border-radius: 9px; }
-.on-lixo { width: 46px; height: 64px; border: 2px dashed rgba(255, 255, 255, .55); background: rgba(0, 0, 0, .15); border-radius: 9px; color: #fff; font-size: 24px; position: relative; cursor: pointer; }
+.on-lixo { width: 46px; height: 64px; border: 2px dashed rgba(255, 255, 255, .5); background: rgba(0, 0, 0, .12); border-radius: 9px; position: relative; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .on-lixo.alvo { outline: 3px solid var(--yellow); border-color: var(--yellow); }
-/* Coringa: carta virada, deitada de lado (como no Mega Jogos) */
-.on-coringa { width: 66px; height: 64px; display: flex; align-items: center; justify-content: center; }
-.on-coringa .oncard { transform: rotate(90deg); box-shadow: 0 2px 6px rgba(0, 0, 0, .4); }
+.on-lixo-icon { font-size: 24px; color: #fff; }
+.on-lixo .oncard { box-shadow: 0 2px 6px rgba(0, 0, 0, .4); }
+/* Monte com o coringa deitado na diagonal por baixo (estilo Mega Jogos) */
+.on-deckunit { position: relative; display: inline-block; margin-left: 18px; }
+.on-deckunit .oncard.back { position: relative; z-index: 1; }
+.on-deckunit .on-count { z-index: 2; }
+.on-coringa-diag { position: absolute; left: -20px; top: 16px; transform: rotate(-24deg); z-index: 0; box-shadow: 0 2px 6px rgba(0, 0, 0, .45); }
 .on-jogo.encaixavel { outline: 2px dashed var(--yellow); cursor: pointer; }
+/* Jogos baixados menores, para caber tudo sem barra de rolagem */
+.on-jogos .oncard { min-width: 34px; height: 48px; font-size: 14px; }
+.on-jogos .oncard .np { font-size: 11px; margin-top: 0; }
+.on-jogo .oncard { margin-left: -6px; }
 
 /* Compactação quando deitado (pouca altura) para caber tudo na tela */
 @media (max-height: 500px) {
-  .oncard { min-width: 40px; height: 54px; font-size: 15px; }
-  .oncard .np { font-size: 13px; margin-top: 1px; }
-  .oncard.back { font-size: 22px; }
-  .on-back { width: 36px; height: 50px; font-size: 20px; }
-  .on-mini { width: 22px; height: 32px; }
-  .on-lixo { width: 40px; height: 54px; font-size: 20px; }
-  .on-table { gap: 6px; padding: 2px 0; }
-  .on-center { gap: 16px; }
-  .on-plbl { font-size: 10px; margin-top: 3px; }
-  .on-hint { padding: 3px 6px; font-size: 11px; margin: 4px 0 0; }
-  .on-jogoswrap { padding: 3px; }
-  .on-jogos { min-height: 40px; }
-  .on-hand { gap: 4px; padding: 6px 6px 2px; }
+  .oncard { min-width: 38px; height: 50px; font-size: 14px; }
+  .oncard .np { font-size: 12px; margin-top: 0; }
+  .oncard.back { font-size: 20px; }
+  .on-back { width: 30px; height: 42px; font-size: 18px; }
+  .on-mini { width: 18px; height: 26px; margin-left: -10px; }
+  .on-lixo { width: 36px; height: 50px; }
+  .on-lixo-icon { font-size: 18px; }
+  .on-table { gap: 2px; padding: 0; }
+  .on-opps { margin-bottom: 2px; gap: 10px; }
+  .on-center { gap: 14px; }
+  .on-coringa-diag { top: 12px; left: -16px; }
+  .on-hint { padding: 2px 6px; font-size: 10px; margin: 2px 0 0; }
+  .on-jogoswrap { padding: 2px; margin-top: 2px; }
+  .on-jogos { min-height: 40px; gap: 5px; }
+  .on-jogos .oncard { min-width: 28px; height: 40px; font-size: 12px; }
+  .on-jogos-hint { font-size: 10px; margin: 1px 4px 3px; }
+  .on-hand { gap: 4px; padding: 4px 6px 2px; }
   .on-hand-head { font-size: 12px; margin-bottom: 2px; }
-  .on-topbar { margin-bottom: 4px; }
-  .on-opp-name { font-size: 11px; margin-top: 4px; }
+  .on-topbar { margin-bottom: 2px; }
+  .on-opp-name { font-size: 10px; margin-top: 2px; }
 }
 
 /* Livro / acordo */

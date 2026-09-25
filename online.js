@@ -453,39 +453,28 @@ function onRenderMesa(root) {
   });
   table.appendChild(opps);
 
-  // Centro: Coringa (deitado) · Monte · Descarte · Lixo
+  // Centro: Monte (com o coringa deitado na diagonal por baixo) + Lixo (jogar fora)
   const center = el('<div class="on-center"></div>');
-  // Coringa (carta virada, deitada de lado)
-  const pCor = el('<div class="on-pile"></div>');
-  const corBox = el('<div class="on-coringa"></div>');
-  corBox.appendChild(m.coringa ? onCardEl(m.coringa) : el('<div class="oncard vazio">—</div>'));
-  pCor.appendChild(corBox);
-  pCor.appendChild(el('<div class="on-plbl">Coringa</div>'));
-  center.appendChild(pCor);
-  // Monte
+  // Monte + coringa diagonal
   const pMonte = el('<div class="on-pile"></div>');
+  const deckUnit = el('<div class="on-deckunit"></div>');
+  if (m.coringa) { const cc = onCardEl(m.coringa); cc.classList.add('on-coringa-diag'); deckUnit.appendChild(cc); }
   const monteBtn = el('<button class="oncard back">🂠</button>');
   monteBtn.addEventListener('click', () => onComprar('monte'));
-  const monteC = el('<div class="on-pilecard on-deck"></div>');
-  monteC.appendChild(monteBtn); monteC.appendChild(el(`<span class="on-count">${m.monte.length}</span>`));
-  pMonte.appendChild(monteC); pMonte.appendChild(el('<div class="on-plbl">Monte</div>'));
+  deckUnit.appendChild(monteBtn);
+  deckUnit.appendChild(el(`<span class="on-count">${m.monte.length}</span>`));
+  pMonte.appendChild(deckUnit);
   center.appendChild(pMonte);
-  // Descarte — comprar (fase comprar) ou jogar fora (fase descartar)
-  const pDesc = el('<div class="on-pile"></div>');
-  const topo = (m.descarte && m.descarte.length) ? m.descarte[m.descarte.length - 1] : null;
-  const descarteAlvo = ehMinha && m.fase === 'descartar';
-  const descCard = topo ? onCardEl(topo) : el('<div class="oncard vazio">—</div>');
-  if (descarteAlvo && ONLINE.sel.length === 1) descCard.classList.add('alvo');
-  descCard.addEventListener('click', () => { if (m.fase === 'comprar') onComprar('descarte'); else onDescartar(); });
-  pDesc.appendChild(descCard);
-  pDesc.appendChild(el(`<div class="on-plbl">${descarteAlvo ? '👉 Jogar aqui' : 'Descarte'}</div>`));
-  center.appendChild(pDesc);
-  // Lixo (queima) — toque com 1 carta selecionada para queimar
+  // Lixo = onde se joga a carta fora (e de onde se compra o topo)
   const pLixo = el('<div class="on-pile"></div>');
-  const lixoBtn = el(`<button class="on-lixo ${armado ? 'alvo' : ''}">🗑<span class="on-count">${(m.lixo || []).length}</span></button>`);
-  lixoBtn.addEventListener('click', () => { if (ONLINE.sel.length === 1) onQueimar(); else toast('Selecione 1 carta para queimar'); });
-  pLixo.appendChild(lixoBtn);
-  pLixo.appendChild(el('<div class="on-plbl">Lixo (queima)</div>'));
+  const lixoTop = (m.descarte && m.descarte.length) ? m.descarte[m.descarte.length - 1] : null;
+  const alvoLixo = ehMinha && m.fase === 'descartar' && ONLINE.sel.length === 1;
+  const lixoBox = el(`<div class="on-lixo ${alvoLixo ? 'alvo' : ''}"></div>`);
+  if (lixoTop) lixoBox.appendChild(onCardEl(lixoTop));
+  else lixoBox.appendChild(el('<span class="on-lixo-icon">🗑</span>'));
+  lixoBox.appendChild(el(`<span class="on-count">${(m.descarte || []).length}</span>`));
+  lixoBox.addEventListener('click', () => { if (m.fase === 'comprar') onComprar('descarte'); else onDescartar(); });
+  pLixo.appendChild(lixoBox);
   center.appendChild(pLixo);
   table.appendChild(center);
 
@@ -493,8 +482,8 @@ function onRenderMesa(root) {
 
   if (ehMinha) {
     const dica = m.fase === 'comprar'
-      ? 'Toque no <b>Monte</b> ou no <b>Descarte</b> para comprar'
-      : 'Baixar: selecione e toque na <b>mesa</b> · Jogar fora: toque no <b>Descarte</b> · Queimar: toque no <b>Lixo</b>';
+      ? 'Toque no <b>Monte</b> ou no <b>Lixo</b> para comprar'
+      : 'Baixar/encaixar: selecione e toque num <b>jogo</b> · Jogar fora: toque no <b>Lixo</b>';
     felt.appendChild(el(`<div class="on-hint">${dica}</div>`));
   }
 
