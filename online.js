@@ -299,11 +299,11 @@ function onJogoValido(cartas, cor, bater) {
   if (!cartas || cartas.length < 3) return { ok: false, msg: 'Um jogo tem no mínimo 3 cartas' };
   const coringas = cartas.filter(c => onEhCoringa(c, cor));
   const normais = cartas.filter(c => !onEhCoringa(c, cor));
-  // Trinca
-  if (coringas.length === 0 && cartas.length <= 4
-    && new Set(cartas.map(c => c.r)).size === 1
-    && new Set(cartas.map(c => c.s)).size === cartas.length) {
-    return { ok: true, tipo: 'trinca' };
+  // Trinca: mesmo valor, sem coringa. Naipes distintos (até 4) no jogo normal;
+  // ao BATER pode ter naipe repetido (encaixar as cartas que sobraram).
+  if (coringas.length === 0 && new Set(cartas.map(c => c.r)).size === 1) {
+    if (bater) return { ok: true, tipo: 'trinca' };
+    if (cartas.length <= 4 && new Set(cartas.map(c => c.s)).size === cartas.length) return { ok: true, tipo: 'trinca' };
   }
   // Sequência (precisa de pelo menos 1 carta normal para definir o naipe)
   if (normais.length >= 1 && new Set(normais.map(c => c.s)).size === 1) {
