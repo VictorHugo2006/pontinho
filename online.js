@@ -209,9 +209,9 @@ async function onBaixar() {
       baixadas.forEach(c => { if (vistos.has(c.s)) queimadas.push(c); else { vistos.add(c.s); trinca.push(c); } });
       if (queimadas.length && trinca.length >= 3) {
         const jogos = [...(m.mesaJogos || []), { id: 'j' + Date.now(), dono: myUid, cartas: trinca }];
-        const lixo = [...(m.lixo || []), ...queimadas];
+        const descarte = [...(m.descarte || []), ...queimadas]; // queima vai pro Lixo
         const maosCount = { ...(m.maosCount || {}), [myUid]: resto.length };
-        const upd = { mesaJogos: jogos, lixo, maosCount, ultimaQueima: { uid: myUid, cartas: queimadas.map(c => ({ r: c.r, s: c.s })) } };
+        const upd = { mesaJogos: jogos, descarte, maosCount, ultimaQueima: { uid: myUid, cartas: queimadas.map(c => ({ r: c.r, s: c.s })) } };
         ONLINE.sel = [];
         ONLINE.mesa = { ...m, ...upd };
         ONLINE.mao = { cartas: resto };
@@ -411,7 +411,7 @@ async function onEncaixar(groupId) {
     const gTipo = onJogoValido(g.cartas, m.coringa, true).tipo;
     const rankTrinca = g.cartas[0] && g.cartas[0].r;
     if (gTipo === 'trinca' && add.every(c => c.r === rankTrinca)) {
-      lixoUpd = [...(m.lixo || []), ...add];
+      lixoUpd = [...(m.descarte || []), ...add]; // queima vai pro Lixo
       queimaInfo = { uid: myUid, cartas: add.map(c => ({ r: c.r, s: c.s })) };
       msg = 'Queimou! 🔥'; done = true;
     }
@@ -426,7 +426,7 @@ async function onEncaixar(groupId) {
   const bateu = novaMao.length === 0;
   const extra = bateu ? { status: 'encerrada', vencedor: myUid } : {};
   const upd = { mesaJogos: jogos, maosCount, ...extra };
-  if (lixoUpd) upd.lixo = lixoUpd;
+  if (lixoUpd) upd.descarte = lixoUpd;
   if (queimaInfo) upd.ultimaQueima = queimaInfo;
 
   ONLINE.sel = [];
@@ -649,12 +649,6 @@ function onRenderMesa(root) {
   const monteBtn = el('<button class="oncard back">🂠</button>');
   monteBtn.addEventListener('click', () => onComprar('monte'));
   deckUnit.appendChild(monteBtn);
-  // carta queimada mais recente fica face-up em cima do monte (com 🔥 pra não confundir com o coringa)
-  if (m.lixo && m.lixo.length) {
-    const q = onCardEl(m.lixo[m.lixo.length - 1]); q.classList.add('on-queimada');
-    q.insertAdjacentHTML('beforeend', '<span class="on-fogo">🔥</span>');
-    deckUnit.appendChild(q);
-  }
   deckUnit.appendChild(el(`<span class="on-count">${m.monte.length}</span>`));
   pMonte.appendChild(deckUnit);
   center.appendChild(pMonte);

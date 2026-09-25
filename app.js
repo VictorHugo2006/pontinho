@@ -6,7 +6,7 @@
 'use strict';
 
 /* ----------------------------- Persistência ------------------------------ */
-const APP_VERSION = 'v53';
+const APP_VERSION = 'v54';
 const STORE_KEY = 'pontinho:v1';
 
 const DB = {
