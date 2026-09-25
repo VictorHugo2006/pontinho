@@ -172,13 +172,13 @@ async function onBaixar() {
   const selIds = new Set(ONLINE.sel);
   const mao = (ONLINE.mao && ONLINE.mao.cartas) || [];
   const baixadas = mao.filter(c => selIds.has(c.id));
-  // Só baixa se for uma trinca ou sequência válida
-  const val = onJogoValido(baixadas, m.coringa);
-  if (!val.ok) { toast(val.msg); return; }
   const resto = mao.filter(c => !selIds.has(c.id));
+  const bateu = resto.length === 0; // baixou tudo = bateu (com as 10)
+  // Só baixa se for trinca/sequência válida (coringa nas pontas só quando bate)
+  const val = onJogoValido(baixadas, m.coringa, bateu);
+  if (!val.ok) { toast(val.msg); return; }
   const jogos = [...(m.mesaJogos || []), { id: 'j' + Date.now(), dono: myUid, cartas: onArrumaJogo(baixadas, m.coringa) }];
   const maosCount = { ...(m.maosCount || {}), [myUid]: resto.length };
-  const bateu = resto.length === 0; // baixou tudo = bateu (com as 10)
   const extra = bateu ? { status: 'encerrada', vencedor: myUid } : {};
   ONLINE.sel = [];
   ONLINE.mesa = { ...m, mesaJogos: jogos, maosCount, ...extra };
@@ -201,6 +201,7 @@ async function onDescartar() {
   const cid = ONLINE.sel[0];
   const mao = (ONLINE.mao && ONLINE.mao.cartas) || [];
   const carta = mao.find(c => c.id === cid); if (!carta) return;
+  if (onEhCoringa(carta, m.coringa)) { toast('Não pode jogar o coringa fora'); return; }
   const resto = mao.filter(c => c.id !== cid);
   const idx = m.jogadores.findIndex(j => j.uid === myUid);
   const prox = m.jogadores[(idx + 1) % m.jogadores.length].uid;
@@ -242,16 +243,17 @@ function onCuringas(cor) {
 function onEhCoringa(c, cor) {
   return !!cor && c.r === cor.r && (onCartaVermelha(c.s) !== onCartaVermelha(cor.s));
 }
-// Sequência ok: valores (mesmo naipe) sem repetir + coringas preenchem os buracos
-function onSeqOk(ranks, nCoringas) {
+// Sequência: valores (mesmo naipe) sem repetir + coringas preenchem os buracos.
+// bater=true permite coringa sobrando nas PONTAS; bater=false exige coringa só no MEIO (meiota).
+function onSeqOk(ranks, nCoringas, bater) {
   if (new Set(ranks).size !== ranks.length) return false;
   const span = ranks[ranks.length - 1] - ranks[0] + 1;
   if (span > 13) return false;
   const buracos = span - ranks.length;
-  return nCoringas >= buracos;
+  return bater ? (nCoringas >= buracos) : (nCoringas === buracos);
 }
 // Valida um jogo: trinca (3-4 iguais, naipes diferentes, sem coringa) ou sequência (mesmo naipe em ordem, coringa preenche)
-function onJogoValido(cartas, cor) {
+function onJogoValido(cartas, cor, bater) {
   if (!cartas || cartas.length < 3) return { ok: false, msg: 'Um jogo tem no mínimo 3 cartas' };
   const coringas = cartas.filter(c => onEhCoringa(c, cor));
   const normais = cartas.filter(c => !onEhCoringa(c, cor));
@@ -264,19 +266,20 @@ function onJogoValido(cartas, cor) {
   // Sequência (precisa de pelo menos 1 carta normal para definir o naipe)
   if (normais.length >= 1 && new Set(normais.map(c => c.s)).size === 1) {
     const low = normais.map(c => ON_RANK[c.r]).sort((a, b) => a - b);
-    if (onSeqOk(low, coringas.length)) return { ok: true, tipo: 'sequencia' };
+    if (onSeqOk(low, coringas.length, bater)) return { ok: true, tipo: 'sequencia' };
     if (normais.some(c => c.r === 'A')) { // tenta Ás alto (A depois do K)
       const high = normais.map(c => c.r === 'A' ? 14 : ON_RANK[c.r]).sort((a, b) => a - b);
-      if (onSeqOk(high, coringas.length)) return { ok: true, tipo: 'sequencia' };
+      if (onSeqOk(high, coringas.length, bater)) return { ok: true, tipo: 'sequencia' };
     }
   }
-  return { ok: false, msg: 'Não é uma trinca nem sequência válida' };
+  const msg = coringas.length ? 'Ao baixar, o coringa só vale no meio (nas pontas só pra bater)' : 'Não é uma trinca nem sequência válida';
+  return { ok: false, msg };
 }
 
 // Arruma a ordem de exibição do jogo (sequência ordenada, coringas nos buracos)
 // Detecta Ás alto (J-Q-K-A) vs Ás baixo (A-2-3).
 function onArrumaJogo(cartas, cor) {
-  const v = onJogoValido(cartas, cor);
+  const v = onJogoValido(cartas, cor, true);
   if (!v.ok || v.tipo === 'trinca') return cartas;
   const coringas = cartas.filter(c => onEhCoringa(c, cor));
   const normais = cartas.filter(c => !onEhCoringa(c, cor));
@@ -284,9 +287,9 @@ function onArrumaJogo(cartas, cor) {
   // decide se o Ás é alto: se com Ás=1 não fecha, tenta Ás=14
   let aceHigh = false;
   const low = normais.map(c => rankOf(c, false)).sort((a, b) => a - b);
-  if (!onSeqOk(low, coringas.length) && normais.some(c => c.r === 'A')) {
+  if (!onSeqOk(low, coringas.length, true) && normais.some(c => c.r === 'A')) {
     const high = normais.map(c => rankOf(c, true)).sort((a, b) => a - b);
-    if (onSeqOk(high, coringas.length)) aceHigh = true;
+    if (onSeqOk(high, coringas.length, true)) aceHigh = true;
   }
   const sorted = normais.slice().sort((a, b) => rankOf(a, aceHigh) - rankOf(b, aceHigh));
   const out = []; let ci = 0;
@@ -312,10 +315,10 @@ async function onEncaixar(groupId) {
   const jogos = (m.mesaJogos || []).map(g => ({ ...g, cartas: [...g.cartas] }));
   const g = jogos.find(x => x.id === groupId); if (!g) return;
   const combinado = [...g.cartas, ...add];
-  const val = onJogoValido(combinado, m.coringa);
   const resto = mao.filter(c => !selIds.has(c.id));
   const maosCount = { ...(m.maosCount || {}), [myUid]: resto.length };
   const bateu = resto.length === 0;
+  const val = onJogoValido(combinado, m.coringa, bateu);
   const extra = bateu ? { status: 'encerrada', vencedor: myUid } : {};
 
   let upd, msg;
