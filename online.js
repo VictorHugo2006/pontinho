@@ -170,7 +170,7 @@ async function onBaixar() {
   const val = onJogoValido(baixadas, m.coringa);
   if (!val.ok) { toast(val.msg); return; }
   const resto = mao.filter(c => !selIds.has(c.id));
-  const jogos = [...(m.mesaJogos || []), { id: 'j' + Date.now(), dono: myUid, cartas: baixadas }];
+  const jogos = [...(m.mesaJogos || []), { id: 'j' + Date.now(), dono: myUid, cartas: onArrumaJogo(baixadas, m.coringa) }];
   const maosCount = { ...(m.maosCount || {}), [myUid]: resto.length };
   const bateu = resto.length === 0; // baixou tudo = bateu (com as 10)
   const extra = bateu ? { status: 'encerrada', vencedor: myUid } : {};
@@ -265,6 +265,55 @@ function onJogoValido(cartas, cor) {
     }
   }
   return { ok: false, msg: 'Não é uma trinca nem sequência válida' };
+}
+
+// Arruma a ordem de exibição do jogo (sequência ordenada, coringas nos buracos)
+function onArrumaJogo(cartas, cor) {
+  const v = onJogoValido(cartas, cor);
+  if (!v.ok || v.tipo === 'trinca') return cartas;
+  const coringas = cartas.filter(c => onEhCoringa(c, cor));
+  const normais = cartas.filter(c => !onEhCoringa(c, cor)).sort((a, b) => ON_RANK[a.r] - ON_RANK[b.r]);
+  const out = []; let ci = 0;
+  for (let i = 0; i < normais.length; i++) {
+    if (i > 0) {
+      let gap = ON_RANK[normais[i].r] - ON_RANK[normais[i - 1].r] - 1;
+      while (gap-- > 0 && ci < coringas.length) out.push(coringas[ci++]);
+    }
+    out.push(normais[i]);
+  }
+  while (ci < coringas.length) out.push(coringas[ci++]); // coringa que sobra estende a ponta
+  return out;
+}
+
+// Encaixa as cartas selecionadas num jogo já baixado (se continuar válido)
+async function onEncaixar(groupId) {
+  const m = ONLINE.mesa, code = ONLINE.code;
+  if (!onMinhaVez()) { toast('Não é sua vez'); return; }
+  if (!ONLINE.sel.length) { toast('Selecione as cartas para encaixar'); return; }
+  const selIds = new Set(ONLINE.sel);
+  const mao = (ONLINE.mao && ONLINE.mao.cartas) || [];
+  const add = mao.filter(c => selIds.has(c.id));
+  const jogos = (m.mesaJogos || []).map(g => ({ ...g, cartas: [...g.cartas] }));
+  const g = jogos.find(x => x.id === groupId); if (!g) return;
+  const combinado = [...g.cartas, ...add];
+  const val = onJogoValido(combinado, m.coringa);
+  if (!val.ok) { toast('Não encaixa aqui: ' + val.msg); return; }
+  g.cartas = onArrumaJogo(combinado, m.coringa);
+  const resto = mao.filter(c => !selIds.has(c.id));
+  const maosCount = { ...(m.maosCount || {}), [myUid]: resto.length };
+  const bateu = resto.length === 0;
+  const extra = bateu ? { status: 'encerrada', vencedor: myUid } : {};
+  ONLINE.sel = [];
+  ONLINE.mesa = { ...m, mesaJogos: jogos, maosCount, ...extra };
+  ONLINE.mao = { cartas: resto };
+  renderOnline();
+  if (bateu) toast('Você bateu! 🎉'); else toast('Encaixou!');
+  try {
+    const batch = fbDB.batch();
+    batch.set(onMaoRef(code, myUid), { cartas: resto });
+    batch.update(onMesaRef(code), { mesaJogos: jogos, maosCount, ...extra });
+    await batch.commit();
+  } catch (e) { console.warn(e); toast('Erro ao encaixar'); }
 }
 
 // Queimar (lixo): tira 1 carta selecionada da mão e joga fora de jogo
@@ -452,13 +501,14 @@ function onRenderMesa(root) {
   // Jogos baixados — toque na área para BAIXAR as selecionadas
   const jogos = m.mesaJogos || [];
   const jbWrap = el('<div class="on-jogoswrap"></div>');
-  jbWrap.appendChild(el(`<div class="on-jogos-hint">${ehMinha ? (armado ? '⬇️ Toque para BAIXAR as ' + ONLINE.sel.length + ' selecionadas' : 'Jogos na mesa — toque aqui p/ baixar') : 'Jogos na mesa'}</div>`));
+  jbWrap.appendChild(el(`<div class="on-jogos-hint">${ehMinha ? (armado ? '⬇️ Toque num JOGO p/ encaixar, ou na área vazia p/ criar um novo' : 'Jogos na mesa — baixar/encaixar aqui') : 'Jogos na mesa'}</div>`));
   const jb = el('<div class="on-jogos"></div>');
   if (!jogos.length) jb.appendChild(el('<div class="on-jogos-vazio">Nenhum jogo baixado ainda</div>'));
   jogos.forEach(g => {
     const dono = (m.jogadores.find(j => j.uid === g.dono) || {}).nome || '';
-    const grp = el(`<div class="on-jogo" title="${dono}"></div>`);
+    const grp = el(`<div class="on-jogo ${armado ? 'encaixavel' : ''}" title="${dono}"></div>`);
     g.cartas.forEach(c => grp.appendChild(onCardEl(c)));
+    if (ehMinha) grp.addEventListener('click', (e) => { e.stopPropagation(); if (ONLINE.sel.length) onEncaixar(g.id); });
     jb.appendChild(grp);
   });
   jbWrap.appendChild(jb);
