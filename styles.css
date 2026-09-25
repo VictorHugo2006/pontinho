@@ -393,7 +393,8 @@ table.board .money.zero { color: var(--muted); }
 .on-pulga-btn { background: var(--green-strong) !important; color: #fff !important; border-color: var(--green-strong) !important; }
 .on-jogo.encaixavel { outline: 2px dashed var(--yellow); cursor: pointer; }
 .on-queimada { position: absolute; top: -4px; right: -12px; transform: rotate(10deg); z-index: 3; box-shadow: 0 2px 6px rgba(0, 0, 0, .5); }
-.on-aviso { text-align: center; font-size: 12px; background: rgba(255, 120, 60, .25); color: #ffd9c2; padding: 3px 10px; border-radius: 8px; margin: 4px auto 0; width: fit-content; font-weight: 700; }
+.on-aviso { text-align: center; font-size: 13px; background: rgba(255, 120, 60, .32); color: #ffe3d2; padding: 4px 14px; border-radius: 8px; margin: 6px auto 0; width: fit-content; font-weight: 800; }
+.on-fogo { position: absolute; top: -7px; left: -7px; font-size: 13px; }
 /* Jogos baixados menores, para caber tudo sem barra de rolagem */
 .on-jogos .oncard { min-width: 34px; height: 48px; font-size: 14px; }
 .on-jogos .oncard .np { font-size: 11px; margin-top: 0; }

@@ -198,6 +198,31 @@ async function onBaixar() {
   const baixadas = mao.filter(c => selIds.has(c.id));
   const resto = mao.filter(c => !selIds.has(c.id));
   const bateu = resto.length === 0; // baixou tudo = bateu (com as 10)
+
+  // Meio do jogo: mesmo valor com naipe repetido → baixa a trinca (3+ naipes distintos)
+  // e o(s) repetido(s) vai(vão) pro monte como QUEIMA.
+  if (resto.length > 1) {
+    const semCoringa = baixadas.filter(c => !onEhCoringa(c, m.coringa));
+    const mesmoValor = baixadas.length >= 3 && new Set(baixadas.map(c => c.r)).size === 1;
+    if (mesmoValor && semCoringa.length === baixadas.length) {
+      const vistos = new Set(); const trinca = []; const queimadas = [];
+      baixadas.forEach(c => { if (vistos.has(c.s)) queimadas.push(c); else { vistos.add(c.s); trinca.push(c); } });
+      if (queimadas.length && trinca.length >= 3) {
+        const jogos = [...(m.mesaJogos || []), { id: 'j' + Date.now(), dono: myUid, cartas: trinca }];
+        const lixo = [...(m.lixo || []), ...queimadas];
+        const maosCount = { ...(m.maosCount || {}), [myUid]: resto.length };
+        const upd = { mesaJogos: jogos, lixo, maosCount, ultimaQueima: { uid: myUid, cartas: queimadas.map(c => ({ r: c.r, s: c.s })) } };
+        ONLINE.sel = [];
+        ONLINE.mesa = { ...m, ...upd };
+        ONLINE.mao = { cartas: resto };
+        renderOnline();
+        toast('Trinca baixada, repetido queimado 🔥');
+        try { const b = fbDB.batch(); b.set(onMaoRef(code, myUid), { cartas: resto }); b.update(onMesaRef(code), upd); await b.commit(); } catch (e) { console.warn(e); }
+        return;
+      }
+    }
+  }
+
   // Coringa na ponta é permitido quando está batendo (sobra 0 ou 1 carta pra descartar)
   const val = onJogoValido(baixadas, m.coringa, resto.length <= 1);
   if (!val.ok) { toast(val.msg); return; }
@@ -624,8 +649,12 @@ function onRenderMesa(root) {
   const monteBtn = el('<button class="oncard back">🂠</button>');
   monteBtn.addEventListener('click', () => onComprar('monte'));
   deckUnit.appendChild(monteBtn);
-  // carta queimada mais recente fica face-up em cima do monte
-  if (m.lixo && m.lixo.length) { const q = onCardEl(m.lixo[m.lixo.length - 1]); q.classList.add('on-queimada'); deckUnit.appendChild(q); }
+  // carta queimada mais recente fica face-up em cima do monte (com 🔥 pra não confundir com o coringa)
+  if (m.lixo && m.lixo.length) {
+    const q = onCardEl(m.lixo[m.lixo.length - 1]); q.classList.add('on-queimada');
+    q.insertAdjacentHTML('beforeend', '<span class="on-fogo">🔥</span>');
+    deckUnit.appendChild(q);
+  }
   deckUnit.appendChild(el(`<span class="on-count">${m.monte.length}</span>`));
   pMonte.appendChild(deckUnit);
   center.appendChild(pMonte);
@@ -651,17 +680,9 @@ function onRenderMesa(root) {
     felt.appendChild(el(`<div class="on-aviso">🔥 ${qn} queimou ${qc}</div>`));
   }
 
-  if (ehMinha) {
-    const dica = m.fase === 'comprar'
-      ? 'Toque no <b>Monte</b> ou no <b>Lixo</b> para comprar'
-      : 'Baixar/encaixar: selecione e toque num <b>jogo</b> · Jogar fora: toque no <b>Lixo</b>';
-    felt.appendChild(el(`<div class="on-hint">${dica}</div>`));
-  }
-
-  // Jogos baixados — toque na área para BAIXAR as selecionadas
+  // Jogos baixados
   const jogos = m.mesaJogos || [];
   const jbWrap = el('<div class="on-jogoswrap"></div>');
-  jbWrap.appendChild(el(`<div class="on-jogos-hint">${ehMinha ? (armado ? '⬇️ Toque num JOGO p/ encaixar, ou na área vazia p/ criar um novo' : 'Jogos na mesa — baixar/encaixar aqui') : 'Jogos na mesa'}</div>`));
   const jb = el('<div class="on-jogos"></div>');
   if (!jogos.length) jb.appendChild(el('<div class="on-jogos-vazio">Nenhum jogo baixado ainda</div>'));
   jogos.forEach(g => {
