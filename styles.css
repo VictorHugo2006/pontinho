@@ -392,6 +392,8 @@ table.board .money.zero { color: var(--muted); }
 .on-pulga-ind b.red { color: #ff9a9a; }
 .on-pulga-btn { background: var(--green-strong) !important; color: #fff !important; border-color: var(--green-strong) !important; }
 .on-jogo.encaixavel { outline: 2px dashed var(--yellow); cursor: pointer; }
+.on-queimada { position: absolute; top: -4px; right: -12px; transform: rotate(10deg); z-index: 3; box-shadow: 0 2px 6px rgba(0, 0, 0, .5); }
+.on-aviso { text-align: center; font-size: 12px; background: rgba(255, 120, 60, .25); color: #ffd9c2; padding: 3px 10px; border-radius: 8px; margin: 4px auto 0; width: fit-content; font-weight: 700; }
 /* Jogos baixados menores, para caber tudo sem barra de rolagem */
 .on-jogos .oncard { min-width: 34px; height: 48px; font-size: 14px; }
 .on-jogos .oncard .np { font-size: 11px; margin-top: 0; }
@@ -420,6 +422,35 @@ table.board .money.zero { color: var(--muted); }
   .on-topbar { margin-bottom: 2px; }
   .on-opp-name { font-size: 10px; margin-top: 2px; }
 }
+
+/* Girar a tela do jogo para paisagem (sem depender do sistema/reinstalar) */
+.on-screen.girado {
+  position: fixed; top: 0; left: 0;
+  width: 100vh; height: 100vw;
+  transform-origin: top left;
+  transform: rotate(90deg) translateY(-100vw);
+  z-index: 60;
+}
+.on-screen.girado .oncard { min-width: 38px; height: 50px; font-size: 14px; }
+.on-screen.girado .oncard .np { font-size: 12px; margin-top: 0; }
+.on-screen.girado .oncard.back { font-size: 20px; }
+.on-screen.girado .on-back { width: 30px; height: 42px; font-size: 18px; }
+.on-screen.girado .on-mini { width: 18px; height: 26px; margin-left: -10px; }
+.on-screen.girado .on-lixo { width: 36px; height: 50px; }
+.on-screen.girado .on-lixo-icon { font-size: 18px; }
+.on-screen.girado .on-table { gap: 2px; padding: 0; }
+.on-screen.girado .on-opps { margin-bottom: 2px; gap: 10px; }
+.on-screen.girado .on-center { gap: 14px; }
+.on-screen.girado .on-coringa-diag { top: 12px; left: -16px; }
+.on-screen.girado .on-hint { padding: 2px 6px; font-size: 10px; margin: 2px 0 0; }
+.on-screen.girado .on-jogoswrap { padding: 2px; margin-top: 2px; }
+.on-screen.girado .on-jogos { min-height: 40px; gap: 5px; }
+.on-screen.girado .on-jogos .oncard { min-width: 28px; height: 40px; font-size: 12px; }
+.on-screen.girado .on-jogos-hint { font-size: 10px; margin: 1px 4px 3px; }
+.on-screen.girado .on-hand { gap: 4px; padding: 4px 6px 2px; }
+.on-screen.girado .on-hand-head { font-size: 12px; margin-bottom: 2px; }
+.on-screen.girado .on-topbar { margin-bottom: 2px; }
+.on-screen.girado .on-opp-name { font-size: 10px; margin-top: 2px; }
 
 /* Livro / acordo */
 .livro-row { display: grid; grid-template-columns: 1fr auto; gap: 6px 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }

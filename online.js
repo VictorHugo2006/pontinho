@@ -129,7 +129,7 @@ async function onIniciar() {
     batch.update(onMesaRef(code), {
       status: 'jogando', coringa, monte: deck, descarte: [], lixo: [], mesaJogos: [],
       turno: primeiro, fase: 'comprar', vencedor: null, maosCount,
-      pontosTotais, pontosHand: {}, pulgas: [],
+      pontosTotais, pontosHand: {}, pulgas: [], ultimaQueima: null,
     });
     await batch.commit();
     ONLINE.sel = [];
@@ -174,8 +174,8 @@ async function onBaixar() {
   const baixadas = mao.filter(c => selIds.has(c.id));
   const resto = mao.filter(c => !selIds.has(c.id));
   const bateu = resto.length === 0; // baixou tudo = bateu (com as 10)
-  // Só baixa se for trinca/sequência válida (coringa nas pontas só quando bate)
-  const val = onJogoValido(baixadas, m.coringa, bateu);
+  // Coringa na ponta é permitido quando está batendo (sobra 0 ou 1 carta pra descartar)
+  const val = onJogoValido(baixadas, m.coringa, resto.length <= 1);
   if (!val.ok) { toast(val.msg); return; }
   const jogos = [...(m.mesaJogos || []), { id: 'j' + Date.now(), dono: myUid, cartas: onArrumaJogo(baixadas, m.coringa) }];
   const maosCount = { ...(m.maosCount || {}), [myUid]: resto.length };
@@ -318,11 +318,10 @@ async function onEncaixar(groupId) {
   let novaMao = mao.filter(c => !selIds.has(c.id)); // mão sem as selecionadas
   let lixoUpd = null, msg = '', done = false;
 
-  // 1) Encaixe normal
+  // 1) Encaixe normal (coringa na ponta liberado quando está batendo — sobra 0 ou 1)
   {
-    const bateuTmp = novaMao.length === 0;
     const combinado = [...g.cartas, ...add];
-    if (onJogoValido(combinado, m.coringa, bateuTmp).ok) {
+    if (onJogoValido(combinado, m.coringa, novaMao.length <= 1).ok) {
       g.cartas = onArrumaJogo(combinado, m.coringa);
       msg = 'Encaixou!'; done = true;
     }
@@ -339,12 +338,14 @@ async function onEncaixar(groupId) {
       }
     }
   }
-  // 3) Queima: jogo é trinca e as cartas têm o MESMO valor (carta morta)
+  // 3) Queima: jogo é trinca e as cartas têm o MESMO valor (carta morta) → vai pro monte
+  let queimaInfo = null;
   if (!done) {
     const gTipo = onJogoValido(g.cartas, m.coringa, true).tipo;
     const rankTrinca = g.cartas[0] && g.cartas[0].r;
     if (gTipo === 'trinca' && add.every(c => c.r === rankTrinca)) {
       lixoUpd = [...(m.lixo || []), ...add];
+      queimaInfo = { uid: myUid, cartas: add.map(c => ({ r: c.r, s: c.s })) };
       msg = 'Queimou! 🔥'; done = true;
     }
   }
@@ -355,6 +356,7 @@ async function onEncaixar(groupId) {
   const extra = bateu ? { status: 'encerrada', vencedor: myUid } : {};
   const upd = { mesaJogos: jogos, maosCount, ...extra };
   if (lixoUpd) upd.lixo = lixoUpd;
+  if (queimaInfo) upd.ultimaQueima = queimaInfo;
 
   ONLINE.sel = [];
   ONLINE.mesa = { ...m, ...upd };
@@ -523,7 +525,7 @@ function onRenderMesa(root) {
   const turnoNome = (m.jogadores.find(j => j.uid === m.turno) || {}).nome || '—';
   const corTxt = m.coringa ? (onCartaVermelha(m.coringa.s) ? 'pretos' : 'vermelhos') : '';
 
-  const screen = el('<div class="on-screen land"></div>');
+  const screen = el(`<div class="on-screen land ${ONLINE._girado ? 'girado' : ''}"></div>`);
   const felt = el('<div class="on-felt"></div>');
   const outros = m.jogadores.filter(j => j.uid !== myUid);
   const armado = ehMinha && ONLINE.sel.length > 0;
@@ -574,6 +576,8 @@ function onRenderMesa(root) {
   const monteBtn = el('<button class="oncard back">🂠</button>');
   monteBtn.addEventListener('click', () => onComprar('monte'));
   deckUnit.appendChild(monteBtn);
+  // carta queimada mais recente fica face-up em cima do monte
+  if (m.lixo && m.lixo.length) { const q = onCardEl(m.lixo[m.lixo.length - 1]); q.classList.add('on-queimada'); deckUnit.appendChild(q); }
   deckUnit.appendChild(el(`<span class="on-count">${m.monte.length}</span>`));
   pMonte.appendChild(deckUnit);
   center.appendChild(pMonte);
@@ -591,6 +595,13 @@ function onRenderMesa(root) {
   table.appendChild(center);
 
   felt.appendChild(table);
+
+  // Aviso da última queima (todos veem)
+  if (m.ultimaQueima) {
+    const qn = (m.jogadores.find(j => j.uid === m.ultimaQueima.uid) || {}).nome || '';
+    const qc = (m.ultimaQueima.cartas || []).map(c => c.r + c.s).join(', ');
+    felt.appendChild(el(`<div class="on-aviso">🔥 ${qn} queimou ${qc}</div>`));
+  }
 
   if (ehMinha) {
     const dica = m.fase === 'comprar'
@@ -694,17 +705,11 @@ async function onReportarPontos() {
   catch (e) { console.warn('reportar pontos', e); }
 }
 
-// Alterna a trava de orientação em paisagem (deitado). NÃO usa tela cheia,
-// para não disparar a mensagem do navegador "arraste para sair da tela cheia".
-async function onToggleFull() {
-  try {
-    if (screen.orientation && screen.orientation.lock) {
-      if (ONLINE._deitado) { try { screen.orientation.unlock(); } catch (_) {} ONLINE._deitado = false; }
-      else { await screen.orientation.lock('landscape'); ONLINE._deitado = true; }
-    } else {
-      toast('Gire o celular para deitar a tela');
-    }
-  } catch (_) { toast('Gire o celular para deitar a tela'); }
+// Gira a própria tela do jogo (CSS) — funciona em qualquer aparelho/navegador,
+// sem depender de reinstalar o app nem da API de tela cheia.
+function onToggleFull() {
+  ONLINE._girado = !ONLINE._girado;
+  renderOnline();
 }
 
 function onRenderFim(root) {
