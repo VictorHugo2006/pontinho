@@ -174,13 +174,16 @@ async function onComprar(origem) { // 'monte' | 'descarte'
   }
   const mao = [...((ONLINE.mao && ONLINE.mao.cartas) || []), carta];
   const maosCount = { ...(m.maosCount || {}), [myUid]: mao.length };
+  // Guarda a carta pega do lixo p/ permitir devolvê-la sem passar a vez
+  const compraLixoId = origem === 'descarte' ? carta.id : null;
   // Atualiza a tela na hora (otimista)
-  ONLINE.mesa = { ...m, [campo]: valor, fase: 'descartar', maosCount };
+  const upd = { [campo]: valor, fase: 'descartar', maosCount, compraLixoId };
+  ONLINE.mesa = { ...m, ...upd };
   ONLINE.mao = { cartas: mao };
   renderOnline();
   try {
     const batch = fbDB.batch();
-    batch.update(onMesaRef(code), { [campo]: valor, fase: 'descartar', maosCount });
+    batch.update(onMesaRef(code), upd);
     batch.set(onMaoRef(code, myUid), { cartas: mao });
     await batch.commit();
   } catch (e) { console.warn(e); toast('Erro ao comprar'); }
@@ -222,16 +225,34 @@ async function onDescartar() {
   const cid = ONLINE.sel[0];
   const mao = (ONLINE.mao && ONLINE.mao.cartas) || [];
   const carta = mao.find(c => c.id === cid); if (!carta) return;
-  if (onEhCoringa(carta, m.coringa)) { toast('Não pode jogar o coringa fora'); return; }
   const resto = mao.filter(c => c.id !== cid);
+  const maosCount = { ...(m.maosCount || {}), [myUid]: resto.length };
+  const descarte = [...(m.descarte || []), carta];
+
+  // Devolver ao lixo a carta que acabou de pegar do lixo: NÃO passa a vez (volta a comprar)
+  if (carta.id === m.compraLixoId) {
+    const upd = { descarte, fase: 'comprar', maosCount, compraLixoId: null };
+    ONLINE.sel = [];
+    ONLINE.mesa = { ...m, ...upd };
+    ONLINE.mao = { cartas: resto };
+    renderOnline();
+    toast('Devolveu ao lixo — pode comprar de novo');
+    try {
+      const batch = fbDB.batch();
+      batch.set(onMaoRef(code, myUid), { cartas: resto });
+      batch.update(onMesaRef(code), upd);
+      await batch.commit();
+    } catch (e) { console.warn(e); toast('Erro'); }
+    return;
+  }
+
+  if (onEhCoringa(carta, m.coringa)) { toast('Não pode jogar o coringa fora'); return; }
   const idx = m.jogadores.findIndex(j => j.uid === myUid);
   const prox = m.jogadores[(idx + 1) % m.jogadores.length].uid;
-  const descarte = [...(m.descarte || []), carta];
-  const maosCount = { ...(m.maosCount || {}), [myUid]: resto.length };
   const bateu = resto.length === 0; // descartou a última = bateu (sobrou 1)
   const upd = bateu
-    ? { descarte, maosCount, status: 'encerrada', vencedor: myUid }
-    : { descarte, turno: prox, fase: 'comprar', maosCount };
+    ? { descarte, maosCount, status: 'encerrada', vencedor: myUid, compraLixoId: null }
+    : { descarte, turno: prox, fase: 'comprar', maosCount, compraLixoId: null };
   ONLINE.sel = [];
   ONLINE.mesa = { ...m, ...upd };
   ONLINE.mao = { cartas: resto };
