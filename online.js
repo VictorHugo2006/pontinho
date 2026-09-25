@@ -274,18 +274,28 @@ function onJogoValido(cartas, cor) {
 }
 
 // Arruma a ordem de exibição do jogo (sequência ordenada, coringas nos buracos)
+// Detecta Ás alto (J-Q-K-A) vs Ás baixo (A-2-3).
 function onArrumaJogo(cartas, cor) {
   const v = onJogoValido(cartas, cor);
   if (!v.ok || v.tipo === 'trinca') return cartas;
   const coringas = cartas.filter(c => onEhCoringa(c, cor));
-  const normais = cartas.filter(c => !onEhCoringa(c, cor)).sort((a, b) => ON_RANK[a.r] - ON_RANK[b.r]);
+  const normais = cartas.filter(c => !onEhCoringa(c, cor));
+  const rankOf = (c, aceHigh) => (c.r === 'A' ? (aceHigh ? 14 : 1) : ON_RANK[c.r]);
+  // decide se o Ás é alto: se com Ás=1 não fecha, tenta Ás=14
+  let aceHigh = false;
+  const low = normais.map(c => rankOf(c, false)).sort((a, b) => a - b);
+  if (!onSeqOk(low, coringas.length) && normais.some(c => c.r === 'A')) {
+    const high = normais.map(c => rankOf(c, true)).sort((a, b) => a - b);
+    if (onSeqOk(high, coringas.length)) aceHigh = true;
+  }
+  const sorted = normais.slice().sort((a, b) => rankOf(a, aceHigh) - rankOf(b, aceHigh));
   const out = []; let ci = 0;
-  for (let i = 0; i < normais.length; i++) {
+  for (let i = 0; i < sorted.length; i++) {
     if (i > 0) {
-      let gap = ON_RANK[normais[i].r] - ON_RANK[normais[i - 1].r] - 1;
+      let gap = rankOf(sorted[i], aceHigh) - rankOf(sorted[i - 1], aceHigh) - 1;
       while (gap-- > 0 && ci < coringas.length) out.push(coringas[ci++]);
     }
-    out.push(normais[i]);
+    out.push(sorted[i]);
   }
   while (ci < coringas.length) out.push(coringas[ci++]); // coringa que sobra estende a ponta
   return out;
@@ -523,7 +533,7 @@ function onRenderMesa(root) {
   jogos.forEach(g => {
     const dono = (m.jogadores.find(j => j.uid === g.dono) || {}).nome || '';
     const grp = el(`<div class="on-jogo ${armado ? 'encaixavel' : ''}" title="${dono}"></div>`);
-    g.cartas.forEach(c => grp.appendChild(onCardEl(c)));
+    onArrumaJogo(g.cartas, m.coringa).forEach(c => grp.appendChild(onCardEl(c)));
     if (ehMinha) grp.addEventListener('click', (e) => { e.stopPropagation(); if (ONLINE.sel.length) onEncaixar(g.id); });
     jb.appendChild(grp);
   });
