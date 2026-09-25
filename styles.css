@@ -349,12 +349,20 @@ table.board .money.zero { color: var(--muted); }
 /* Mesa em tela cheia: felt rola no meio, mão + ações sempre visíveis embaixo */
 .on-screen { position: fixed; inset: 0; z-index: 45; background: #0a4f2b; display: flex; flex-direction: column; }
 .on-screen .on-felt { flex: 1 1 auto; overflow-y: auto; border-radius: 0; margin: 0; box-shadow: inset 0 0 40px rgba(0, 0, 0, .25); }
-.on-screen .on-handwrap { flex: 0 0 auto; margin: 0; background: #0a3f22; padding: 6px 10px 2px; }
+.on-screen .on-handwrap { flex: 0 0 auto; margin: 0; background: #0a3f22; padding: 6px 10px calc(8px + env(safe-area-inset-bottom, 0px)); }
 .on-screen .on-hand-head { color: #eafff0; }
 .on-actions { flex: 0 0 auto; display: flex; gap: 10px; padding: 10px 12px calc(12px + env(safe-area-inset-bottom, 0px)); background: #08351d; }
 .on-actions .btn { flex: 1; }
 .on-topbtns { display: inline-flex; gap: 6px; }
 .on-icon { background: rgba(255, 255, 255, .18); color: #fff; border: none; border-radius: 8px; width: 34px; height: 30px; font-size: 15px; font-weight: 800; cursor: pointer; }
+
+/* Alvos de toque: baixar na mesa / jogar no descarte */
+.on-jogoswrap { margin-top: 8px; border-radius: 12px; padding: 6px; transition: background .15s; }
+.on-jogoswrap.armado { background: rgba(255, 233, 84, .14); outline: 2px dashed var(--yellow); cursor: pointer; }
+.on-jogos-hint { font-size: 12px; opacity: .85; margin: 2px 4px 6px; }
+.on-jogoswrap.armado .on-jogos-hint { color: var(--yellow); opacity: 1; font-weight: 800; }
+.on-jogos { min-height: 54px; }
+.oncard.alvo { outline: 3px solid var(--yellow); box-shadow: 0 0 12px rgba(255, 233, 84, .6); }
 
 /* Livro / acordo */
 .livro-row { display: grid; grid-template-columns: 1fr auto; gap: 6px 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }

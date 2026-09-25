@@ -169,14 +169,17 @@ async function onBaixar() {
   const resto = mao.filter(c => !selIds.has(c.id));
   const jogos = [...(m.mesaJogos || []), { id: 'j' + Date.now(), dono: myUid, cartas: baixadas }];
   const maosCount = { ...(m.maosCount || {}), [myUid]: resto.length };
+  const bateu = resto.length === 0; // baixou tudo = bateu (com as 10)
+  const extra = bateu ? { status: 'encerrada', vencedor: myUid } : {};
   ONLINE.sel = [];
-  ONLINE.mesa = { ...m, mesaJogos: jogos, maosCount };
+  ONLINE.mesa = { ...m, mesaJogos: jogos, maosCount, ...extra };
   ONLINE.mao = { cartas: resto };
   renderOnline();
+  if (bateu) toast('Você bateu! 🎉');
   try {
     const batch = fbDB.batch();
     batch.set(onMaoRef(code, myUid), { cartas: resto });
-    batch.update(onMesaRef(code), { mesaJogos: jogos, maosCount });
+    batch.update(onMesaRef(code), { mesaJogos: jogos, maosCount, ...extra });
     await batch.commit();
   } catch (e) { console.warn(e); toast('Erro ao baixar'); }
 }
@@ -194,14 +197,19 @@ async function onDescartar() {
   const prox = m.jogadores[(idx + 1) % m.jogadores.length].uid;
   const descarte = [...(m.descarte || []), carta];
   const maosCount = { ...(m.maosCount || {}), [myUid]: resto.length };
+  const bateu = resto.length === 0; // descartou a última = bateu (sobrou 1)
+  const upd = bateu
+    ? { descarte, maosCount, status: 'encerrada', vencedor: myUid }
+    : { descarte, turno: prox, fase: 'comprar', maosCount };
   ONLINE.sel = [];
-  ONLINE.mesa = { ...m, descarte, turno: prox, fase: 'comprar', maosCount };
+  ONLINE.mesa = { ...m, ...upd };
   ONLINE.mao = { cartas: resto };
   renderOnline();
+  if (bateu) toast('Você bateu! 🎉');
   try {
     const batch = fbDB.batch();
     batch.set(onMaoRef(code, myUid), { cartas: resto });
-    batch.update(onMesaRef(code), { descarte, turno: prox, fase: 'comprar', maosCount });
+    batch.update(onMesaRef(code), upd);
     await batch.commit();
   } catch (e) { console.warn(e); toast('Erro ao descartar'); }
 }
@@ -330,20 +338,30 @@ function onRenderMesa(root) {
   monteC.appendChild(monteBtn); monteC.appendChild(el(`<span class="on-count">${m.monte.length}</span>`));
   pMonte.appendChild(monteC); pMonte.appendChild(el('<div class="on-plbl">Monte</div>'));
   center.appendChild(pMonte);
-  // Descarte
+  // Descarte — toque para COMPRAR (fase comprar) ou JOGAR FORA (fase descartar)
   const pDesc = el('<div class="on-pile"></div>');
   const topo = (m.descarte && m.descarte.length) ? m.descarte[m.descarte.length - 1] : null;
-  pDesc.appendChild(topo ? onCardEl(topo, () => onComprar('descarte')) : el('<div class="oncard vazio">—</div>'));
-  pDesc.appendChild(el('<div class="on-plbl">Descarte</div>'));
+  const descarteAlvo = ehMinha && m.fase === 'descartar'; // vai jogar fora aqui
+  const descCard = topo ? onCardEl(topo) : el('<div class="oncard vazio">—</div>');
+  if (descarteAlvo && ONLINE.sel.length === 1) descCard.classList.add('alvo');
+  descCard.addEventListener('click', () => { if (m.fase === 'comprar') onComprar('descarte'); else onDescartar(); });
+  pDesc.appendChild(descCard);
+  pDesc.appendChild(el(`<div class="on-plbl">${descarteAlvo ? '👉 Jogar aqui' : 'Descarte'}</div>`));
   center.appendChild(pDesc);
   felt.appendChild(center);
 
   if (ehMinha) {
-    felt.appendChild(el(`<div class="on-hint">${m.fase === 'comprar' ? '1) Compre do monte ou do descarte' : '2) Baixe (opcional) e descarte 1 carta'}</div>`));
+    const dica = m.fase === 'comprar'
+      ? 'Toque no <b>Monte</b> ou no <b>Descarte</b> para comprar'
+      : 'Baixar: selecione e toque na <b>mesa</b> · Jogar fora: selecione 1 e toque no <b>Descarte</b>';
+    felt.appendChild(el(`<div class="on-hint">${dica}</div>`));
   }
 
-  // Jogos baixados
+  // Jogos baixados — toque na área para BAIXAR as cartas selecionadas
   const jogos = m.mesaJogos || [];
+  const jbWrap = el('<div class="on-jogoswrap"></div>');
+  const armado = ehMinha && ONLINE.sel.length > 0;
+  jbWrap.appendChild(el(`<div class="on-jogos-hint">${ehMinha ? (armado ? '⬇️ Toque para BAIXAR as ' + ONLINE.sel.length + ' selecionadas' : 'Jogos na mesa — toque aqui p/ baixar as selecionadas') : 'Jogos na mesa'}</div>`));
   const jb = el('<div class="on-jogos"></div>');
   if (!jogos.length) jb.appendChild(el('<div class="on-jogos-vazio">Nenhum jogo baixado ainda</div>'));
   jogos.forEach(g => {
@@ -352,7 +370,10 @@ function onRenderMesa(root) {
     g.cartas.forEach(c => grp.appendChild(onCardEl(c)));
     jb.appendChild(grp);
   });
-  felt.appendChild(jb);
+  jbWrap.appendChild(jb);
+  if (armado) jbWrap.classList.add('armado');
+  if (ehMinha) jbWrap.addEventListener('click', () => { if (ONLINE.sel.length) onBaixar(); });
+  felt.appendChild(jbWrap);
 
   screen.appendChild(felt);
 
@@ -375,17 +396,6 @@ function onRenderMesa(root) {
   })));
   hw.appendChild(hand);
   screen.appendChild(hw);
-
-  // Barra de ações (dentro da tela cheia, sempre visível embaixo)
-  const bar = el('<div class="on-actions"></div>');
-  const bBaixar = el('<button class="btn ghost">⬇️ Baixar</button>');
-  bBaixar.addEventListener('click', onBaixar);
-  const bDesc = el('<button class="btn primary">Descartar</button>');
-  bDesc.addEventListener('click', onDescartar);
-  const bBati = el('<button class="btn green">Bati!</button>');
-  bBati.addEventListener('click', () => openConfirmModal({ title: 'Bati?', message: 'Confirma que você bateu e encerrou a mão?', okText: 'Bati!', onOk: onBati }));
-  bar.appendChild(bBaixar); bar.appendChild(bDesc); bar.appendChild(bBati);
-  screen.appendChild(bar);
 
   root.appendChild(screen);
 }
