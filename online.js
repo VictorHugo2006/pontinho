@@ -166,6 +166,9 @@ async function onBaixar() {
   const selIds = new Set(ONLINE.sel);
   const mao = (ONLINE.mao && ONLINE.mao.cartas) || [];
   const baixadas = mao.filter(c => selIds.has(c.id));
+  // Só baixa se for uma trinca ou sequência válida
+  const val = onJogoValido(baixadas, m.coringa);
+  if (!val.ok) { toast(val.msg); return; }
   const resto = mao.filter(c => !selIds.has(c.id));
   const jogos = [...(m.mesaJogos || []), { id: 'j' + Date.now(), dono: myUid, cartas: baixadas }];
   const maosCount = { ...(m.maosCount || {}), [myUid]: resto.length };
@@ -227,6 +230,41 @@ function onCuringas(cor) {
   return onCartaVermelha(cor.s)
     ? [{ r: cor.r, s: '♠' }, { r: cor.r, s: '♣' }]  // virou vermelha → pretos
     : [{ r: cor.r, s: '♥' }, { r: cor.r, s: '♦' }]; // virou preta → vermelhos
+}
+
+// Uma carta é coringa se tem o valor da carta virada e a COR OPOSTA
+function onEhCoringa(c, cor) {
+  return !!cor && c.r === cor.r && (onCartaVermelha(c.s) !== onCartaVermelha(cor.s));
+}
+// Sequência ok: valores (mesmo naipe) sem repetir + coringas preenchem os buracos
+function onSeqOk(ranks, nCoringas) {
+  if (new Set(ranks).size !== ranks.length) return false;
+  const span = ranks[ranks.length - 1] - ranks[0] + 1;
+  if (span > 13) return false;
+  const buracos = span - ranks.length;
+  return nCoringas >= buracos;
+}
+// Valida um jogo: trinca (3-4 iguais, naipes diferentes, sem coringa) ou sequência (mesmo naipe em ordem, coringa preenche)
+function onJogoValido(cartas, cor) {
+  if (!cartas || cartas.length < 3) return { ok: false, msg: 'Um jogo tem no mínimo 3 cartas' };
+  const coringas = cartas.filter(c => onEhCoringa(c, cor));
+  const normais = cartas.filter(c => !onEhCoringa(c, cor));
+  // Trinca
+  if (coringas.length === 0 && cartas.length <= 4
+    && new Set(cartas.map(c => c.r)).size === 1
+    && new Set(cartas.map(c => c.s)).size === cartas.length) {
+    return { ok: true, tipo: 'trinca' };
+  }
+  // Sequência (precisa de pelo menos 1 carta normal para definir o naipe)
+  if (normais.length >= 1 && new Set(normais.map(c => c.s)).size === 1) {
+    const low = normais.map(c => ON_RANK[c.r]).sort((a, b) => a - b);
+    if (onSeqOk(low, coringas.length)) return { ok: true, tipo: 'sequencia' };
+    if (normais.some(c => c.r === 'A')) { // tenta Ás alto (A depois do K)
+      const high = normais.map(c => c.r === 'A' ? 14 : ON_RANK[c.r]).sort((a, b) => a - b);
+      if (onSeqOk(high, coringas.length)) return { ok: true, tipo: 'sequencia' };
+    }
+  }
+  return { ok: false, msg: 'Não é uma trinca nem sequência válida' };
 }
 
 // Queimar (lixo): tira 1 carta selecionada da mão e joga fora de jogo
@@ -366,8 +404,15 @@ function onRenderMesa(root) {
   });
   table.appendChild(opps);
 
-  // Centro: Monte · Descarte · Lixo
+  // Centro: Coringa (deitado) · Monte · Descarte · Lixo
   const center = el('<div class="on-center"></div>');
+  // Coringa (carta virada, deitada de lado)
+  const pCor = el('<div class="on-pile"></div>');
+  const corBox = el('<div class="on-coringa"></div>');
+  corBox.appendChild(m.coringa ? onCardEl(m.coringa) : el('<div class="oncard vazio">—</div>'));
+  pCor.appendChild(corBox);
+  pCor.appendChild(el('<div class="on-plbl">Coringa</div>'));
+  center.appendChild(pCor);
   // Monte
   const pMonte = el('<div class="on-pile"></div>');
   const monteBtn = el('<button class="oncard back">🂠</button>');
