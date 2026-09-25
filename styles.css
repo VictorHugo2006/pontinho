@@ -346,6 +346,8 @@ table.board .money.zero { color: var(--muted); }
 .on-hand { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px; padding: 10px 8px 6px; }
 .on-hand .oncard { flex: 0 0 auto; box-shadow: 0 2px 4px rgba(0, 0, 0, .35); }
 .on-hand .oncard.sel { transform: translateY(-8px); z-index: 3; }
+.on-hand .oncard { touch-action: none; }
+.on-hand .oncard.dragging { opacity: .7; transform: translateY(-10px) scale(1.05); z-index: 5; }
 
 /* Mesa em tela cheia: felt rola no meio, mão + ações sempre visíveis embaixo */
 .on-screen { position: fixed; inset: 0; z-index: 45; background: #0a4f2b; display: flex; flex-direction: column; }
@@ -384,7 +386,11 @@ table.board .money.zero { color: var(--muted); }
 .on-deckunit { position: relative; display: inline-block; margin-left: 18px; }
 .on-deckunit .oncard.back { position: relative; z-index: 1; }
 .on-deckunit .on-count { z-index: 2; }
-.on-coringa-diag { position: absolute; left: -20px; top: 16px; transform: rotate(-24deg); z-index: 0; box-shadow: 0 2px 6px rgba(0, 0, 0, .45); }
+.on-coringa-diag { position: absolute; left: -30px; top: 20px; transform: rotate(-22deg); z-index: 0; box-shadow: 0 2px 6px rgba(0, 0, 0, .45); }
+.on-deckunit { margin-left: 30px; }
+.on-pulga-ind { margin-left: 6px; }
+.on-pulga-ind b.red { color: #ff9a9a; }
+.on-pulga-btn { background: var(--green-strong) !important; color: #fff !important; border-color: var(--green-strong) !important; }
 .on-jogo.encaixavel { outline: 2px dashed var(--yellow); cursor: pointer; }
 /* Jogos baixados menores, para caber tudo sem barra de rolagem */
 .on-jogos .oncard { min-width: 34px; height: 48px; font-size: 14px; }

@@ -129,7 +129,7 @@ async function onIniciar() {
     batch.update(onMesaRef(code), {
       status: 'jogando', coringa, monte: deck, descarte: [], lixo: [], mesaJogos: [],
       turno: primeiro, fase: 'comprar', vencedor: null, maosCount,
-      pontosTotais, pontosHand: {},
+      pontosTotais, pontosHand: {}, pulgas: [],
     });
     await batch.commit();
     ONLINE.sel = [];
@@ -390,6 +390,63 @@ function onCardEl(c, onClick) {
   return b;
 }
 
+// Ordena a mão de UMA vez (naipe ou sequência) e salva — não é ordem fixa
+function onOrdenarMao(modo) {
+  const cs = ((ONLINE.mao && ONLINE.mao.cartas) || []).slice();
+  if (modo === 'naipe') cs.sort((a, b) => (ON_NAIPE_ORD[a.s] - ON_NAIPE_ORD[b.s]) || (ON_RANK[a.r] - ON_RANK[b.r]));
+  else cs.sort((a, b) => (ON_RANK[a.r] - ON_RANK[b.r]) || (ON_NAIPE_ORD[a.s] - ON_NAIPE_ORD[b.s]));
+  ONLINE.mao = { cartas: cs };
+  renderOnline();
+  if (ONLINE.code) onMaoRef(ONLINE.code, myUid).set({ cartas: cs }).catch(() => {});
+}
+
+// Arrastar carta da mão para reordenar (toque = selecionar; arrastar = mover)
+let onDrag = null;
+function onCardPointerDown(e, cid, cardEl, handEl) {
+  onDrag = { cid, cardEl, handEl, startX: e.clientX, startY: e.clientY, moved: false };
+  try { cardEl.setPointerCapture(e.pointerId); } catch (_) {}
+}
+function onCardPointerMove(e) {
+  if (!onDrag) return;
+  if (!onDrag.moved) {
+    if (Math.hypot(e.clientX - onDrag.startX, e.clientY - onDrag.startY) < 8) return;
+    onDrag.moved = true; onDrag.cardEl.classList.add('dragging');
+  }
+  e.preventDefault();
+  const over = document.elementFromPoint(e.clientX, e.clientY);
+  const alvo = over && over.closest('.on-hand .oncard');
+  if (alvo && alvo !== onDrag.cardEl && alvo.parentElement === onDrag.handEl) {
+    const cards = [...onDrag.handEl.children];
+    const from = cards.indexOf(onDrag.cardEl), to = cards.indexOf(alvo);
+    if (from < to) onDrag.handEl.insertBefore(onDrag.cardEl, alvo.nextSibling);
+    else onDrag.handEl.insertBefore(onDrag.cardEl, alvo);
+  }
+}
+function onCardPointerUp() {
+  if (!onDrag) return;
+  const d = onDrag; onDrag = null;
+  d.cardEl.classList.remove('dragging');
+  if (!d.moved) { // toque simples = selecionar
+    const i = ONLINE.sel.indexOf(d.cid);
+    if (i >= 0) ONLINE.sel.splice(i, 1); else ONLINE.sel.push(d.cid);
+    renderOnline();
+    return;
+  }
+  // arrastou: grava a nova ordem a partir do DOM
+  const novaIds = [...d.handEl.querySelectorAll('.oncard')].map(x => x.dataset.cid);
+  const byId = {}; ((ONLINE.mao && ONLINE.mao.cartas) || []).forEach(c => { byId[c.id] = c; });
+  const cs = novaIds.map(id => byId[id]).filter(Boolean);
+  ONLINE.mao = { cartas: cs };
+  renderOnline();
+  if (ONLINE.code) onMaoRef(ONLINE.code, myUid).set({ cartas: cs }).catch(() => {});
+}
+if (!window.__onDragInit) {
+  window.__onDragInit = true;
+  document.addEventListener('pointermove', onCardPointerMove, { passive: false });
+  document.addEventListener('pointerup', onCardPointerUp);
+  document.addEventListener('pointercancel', onCardPointerUp);
+}
+
 function renderOnline() {
   const root = appRoot(); root.innerHTML = '';
   const ob = document.querySelector('.fab-bar'); if (ob) ob.remove();
@@ -462,9 +519,10 @@ function onRenderMesa(root) {
   const wildsHtml = wilds.length
     ? wilds.map(w => `<b class="${onCartaVermelha(w.s) ? 'red' : 'blk'}">${w.r}${w.s}</b>`).join(' ')
     : '—';
+  const pulgaHtml = m.coringa ? ` <span class="on-pulga-ind">🐛 <b class="${onCartaVermelha(m.coringa.s) ? 'red' : 'blk'}">${m.coringa.r}${m.coringa.s}</b></span>` : '';
   const topbar = el(`
     <div class="on-topbar">
-      <span class="on-curingas">CURINGAS ${wildsHtml}</span>
+      <span class="on-curingas">CURINGAS ${wildsHtml}${pulgaHtml}</span>
       <span class="on-turn ${ehMinha ? 'me' : ''}">${ehMinha ? '🟢 Sua vez' : 'Vez de ' + turnoNome}</span>
       <span class="on-topbtns">
         <span class="on-code-badge">${ONLINE.code}</span>
@@ -487,8 +545,8 @@ function onRenderMesa(root) {
     opps.appendChild(el(`
       <div class="on-opp ${vez}">
         <div class="on-fan"><span class="on-mini"></span><span class="on-mini"></span><span class="on-mini"></span><span class="on-count">${n}</span></div>
-        <div class="on-opp-name">${j.nome}</div>
-        <div class="on-opp-pts">${(m.pontosTotais && m.pontosTotais[j.uid]) || 0} pts</div>
+        <div class="on-opp-name">${j.nome}${(m.pulgas || []).includes(j.uid) ? ' 🐛' : ''}</div>
+        <div class="on-opp-pts">${(m.pontosTotais && m.pontosTotais[j.uid]) || 0} pts · R$ ${money((m.saldo && m.saldo[j.uid]) || 0)}</div>
       </div>`));
   });
   table.appendChild(opps);
@@ -548,26 +606,57 @@ function onRenderMesa(root) {
   screen.appendChild(felt);
 
   // Minha mão (em leque) + Ordenar
-  const mao = onOrdenaMao((ONLINE.mao && ONLINE.mao.cartas) || []);
+  const mao = (ONLINE.mao && ONLINE.mao.cartas) || []; // ordem manual (arrastável)
   const hw = el('<div class="on-handwrap"></div>');
-  const head = el(`<div class="on-hand-head"><span>Sua mão (${mao.length}) · ${(m.pontosTotais && m.pontosTotais[myUid]) || 0} pts</span><span class="on-ordena"></span></div>`);
+  const head = el(`<div class="on-hand-head"><span>Sua mão (${mao.length}) · ${(m.pontosTotais && m.pontosTotais[myUid]) || 0} pts · R$ ${money((m.saldo && m.saldo[myUid]) || 0)}</span><span class="on-ordena"></span></div>`);
   const ord = head.querySelector('.on-ordena');
-  const bN = el(`<button class="chip sm ${ONLINE.ordem === 'naipe' ? 'on' : ''}">♠ Naipe</button>`);
-  bN.addEventListener('click', () => { ONLINE.ordem = ONLINE.ordem === 'naipe' ? null : 'naipe'; renderOnline(); });
-  const bV = el(`<button class="chip sm ${ONLINE.ordem === 'valor' ? 'on' : ''}">🔢 Seq.</button>`);
-  bV.addEventListener('click', () => { ONLINE.ordem = ONLINE.ordem === 'valor' ? null : 'valor'; renderOnline(); });
+  // Botão da pulga: aparece se você tem a carta exata do coringa e ainda não mostrou
+  if (onTemPulga() && !(m.pulgas || []).includes(myUid)) {
+    const bp = el('<button class="chip sm on-pulga-btn">🐛 Tenho a pulga!</button>');
+    bp.addEventListener('click', onDeclararPulga);
+    ord.appendChild(bp);
+  }
+  const bN = el('<button class="chip sm">♠ Naipe</button>');
+  bN.addEventListener('click', () => onOrdenarMao('naipe'));
+  const bV = el('<button class="chip sm">🔢 Seq.</button>');
+  bV.addEventListener('click', () => onOrdenarMao('valor'));
   ord.appendChild(bN); ord.appendChild(bV);
   hw.appendChild(head);
   const hand = el('<div class="on-hand"></div>');
-  mao.forEach(c => hand.appendChild(onCardEl(c, () => {
-    const i = ONLINE.sel.indexOf(c.id);
-    if (i >= 0) ONLINE.sel.splice(i, 1); else ONLINE.sel.push(c.id);
-    renderOnline();
-  })));
+  mao.forEach(c => {
+    const ce = onCardEl(c);
+    ce.dataset.cid = c.id;
+    ce.addEventListener('pointerdown', (e) => onCardPointerDown(e, c.id, ce, hand));
+    hand.appendChild(ce);
+  });
   hw.appendChild(hand);
   screen.appendChild(hw);
 
   root.appendChild(screen);
+}
+
+// Pulga = ter na mão a carta EXATA que foi virada como coringa (mesmo valor e naipe)
+function onTemPulga() {
+  const m = ONLINE.mesa;
+  if (!m || !m.coringa) return false;
+  const mao = (ONLINE.mao && ONLINE.mao.cartas) || [];
+  return mao.some(c => c.r === m.coringa.r && c.s === m.coringa.s);
+}
+// Declara a pulga: mostra a todos e ganha 2,00 de cada jogador
+async function onDeclararPulga() {
+  const m = ONLINE.mesa, code = ONLINE.code;
+  if (!m || !m.coringa) return;
+  if ((m.pulgas || []).includes(myUid)) { toast('Você já mostrou a pulga'); return; }
+  if (!onTemPulga()) { toast('Você não tem a pulga'); return; }
+  const outros = m.jogadores.filter(j => j.uid !== myUid);
+  const saldo = { ...(m.saldo || {}) };
+  outros.forEach(j => { saldo[j.uid] = (saldo[j.uid] || 0) - 2; });
+  saldo[myUid] = (saldo[myUid] || 0) + 2 * outros.length;
+  const pulgas = [...(m.pulgas || []), myUid];
+  ONLINE.mesa = { ...m, saldo, pulgas };
+  renderOnline();
+  toast('🐛 Você mostrou a pulga! +' + money(2 * outros.length));
+  try { await onMesaRef(code).update({ saldo, pulgas }); } catch (e) { console.warn('pulga', e); }
 }
 
 // Valor de uma carta para contagem de pontos
