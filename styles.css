@@ -346,6 +346,16 @@ table.board .money.zero { color: var(--muted); }
 .on-hand .oncard:first-child { margin-left: 0; }
 .on-hand .oncard.sel { transform: translateY(-14px); z-index: 3; }
 
+/* Mesa em tela cheia: felt rola no meio, mão + ações sempre visíveis embaixo */
+.on-screen { position: fixed; inset: 0; z-index: 45; background: #0a4f2b; display: flex; flex-direction: column; }
+.on-screen .on-felt { flex: 1 1 auto; overflow-y: auto; border-radius: 0; margin: 0; box-shadow: inset 0 0 40px rgba(0, 0, 0, .25); }
+.on-screen .on-handwrap { flex: 0 0 auto; margin: 0; background: #0a3f22; padding: 6px 10px 2px; }
+.on-screen .on-hand-head { color: #eafff0; }
+.on-actions { flex: 0 0 auto; display: flex; gap: 10px; padding: 10px 12px calc(12px + env(safe-area-inset-bottom, 0px)); background: #08351d; }
+.on-actions .btn { flex: 1; }
+.on-topbtns { display: inline-flex; gap: 6px; }
+.on-icon { background: rgba(255, 255, 255, .18); color: #fff; border: none; border-radius: 8px; width: 34px; height: 30px; font-size: 15px; font-weight: 800; cursor: pointer; }
+
 /* Livro / acordo */
 .livro-row { display: grid; grid-template-columns: 1fr auto; gap: 6px 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
 .livro-nome { font-weight: 700; font-size: 14px; }

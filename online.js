@@ -284,14 +284,22 @@ function onRenderMesa(root) {
   const turnoNome = (m.jogadores.find(j => j.uid === m.turno) || {}).nome || '—';
   const corTxt = m.coringa ? (onCartaVermelha(m.coringa.s) ? 'pretos' : 'vermelhos') : '';
 
+  const screen = el('<div class="on-screen"></div>');
   const felt = el('<div class="on-felt"></div>');
 
-  // Cabeçalho da mesa: código + vez
-  felt.appendChild(el(`
+  // Cabeçalho da mesa: código + vez + botões (tela cheia / sair)
+  const topbar = el(`
     <div class="on-topbar">
       <span class="on-code-badge">Mesa ${ONLINE.code}</span>
       <span class="on-turn ${ehMinha ? 'me' : ''}">${ehMinha ? '🟢 Sua vez' : 'Vez de ' + turnoNome}</span>
-    </div>`));
+      <span class="on-topbtns">
+        <button class="on-icon" id="on-full" title="Tela cheia">⛶</button>
+        <button class="on-icon" id="on-sair" title="Sair da mesa">✕</button>
+      </span>
+    </div>`);
+  topbar.querySelector('#on-full').addEventListener('click', onToggleFull);
+  topbar.querySelector('#on-sair').addEventListener('click', onSairMesa);
+  felt.appendChild(topbar);
 
   // Adversários (todos menos eu)
   const opps = el('<div class="on-opps"></div>');
@@ -346,7 +354,7 @@ function onRenderMesa(root) {
   });
   felt.appendChild(jb);
 
-  root.appendChild(felt);
+  screen.appendChild(felt);
 
   // Minha mão (em leque) + Ordenar
   const mao = onOrdenaMao((ONLINE.mao && ONLINE.mao.cartas) || []);
@@ -366,10 +374,10 @@ function onRenderMesa(root) {
     renderOnline();
   })));
   hw.appendChild(hand);
-  root.appendChild(hw);
+  screen.appendChild(hw);
 
-  // Barra de ações
-  const bar = el('<div class="fab-bar"></div>');
+  // Barra de ações (dentro da tela cheia, sempre visível embaixo)
+  const bar = el('<div class="on-actions"></div>');
   const bBaixar = el('<button class="btn ghost">⬇️ Baixar</button>');
   bBaixar.addEventListener('click', onBaixar);
   const bDesc = el('<button class="btn primary">Descartar</button>');
@@ -377,7 +385,20 @@ function onRenderMesa(root) {
   const bBati = el('<button class="btn green">Bati!</button>');
   bBati.addEventListener('click', () => openConfirmModal({ title: 'Bati?', message: 'Confirma que você bateu e encerrou a mão?', okText: 'Bati!', onOk: onBati }));
   bar.appendChild(bBaixar); bar.appendChild(bDesc); bar.appendChild(bBati);
-  document.body.appendChild(bar);
+  screen.appendChild(bar);
+
+  root.appendChild(screen);
+}
+
+// Alterna tela cheia de verdade (esconde a barra do navegador)
+function onToggleFull() {
+  try {
+    if (!document.fullscreenElement) {
+      (document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen || (() => {})).call(document.documentElement);
+    } else {
+      (document.exitFullscreen || document.webkitExitFullscreen || (() => {})).call(document);
+    }
+  } catch (_) {}
 }
 
 function onRenderFim(root) {
