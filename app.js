@@ -6,7 +6,7 @@
 'use strict';
 
 /* ----------------------------- Persistência ------------------------------ */
-const APP_VERSION = 'v54';
+const APP_VERSION = 'v55';
 const STORE_KEY = 'pontinho:v1';
 
 const DB = {
@@ -43,6 +43,13 @@ const DB = {
 
 let state = DB.load();
 let currentScreen = 'home';
+
+// Mesas (salas) do marcador — permite 2 mesas ao mesmo tempo (A e B)
+const MESAS = ['A', 'B'];
+let mesaAtual = (() => { try { return localStorage.getItem('pontinho:mesa') || 'A'; } catch (_) { return 'A'; } })();
+function setMesaAtual(m) { mesaAtual = m; try { localStorage.setItem('pontinho:mesa', m); } catch (_) {} }
+const mesaDe = (p) => (p && p.mesa) || 'A';
+function partidaAtualMesa(m) { return state.partidas.find(p => !p.finalizada && mesaDe(p) === m) || null; }
 
 /* ------------------------------- Utils ----------------------------------- */
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -121,6 +128,7 @@ function newPartida({ data, valorPartida, valorBatida, players: sel }) {
   return {
     id: uid(),
     criadoEm: Date.now(),   // para numerar as partidas na ordem certa
+    mesa: mesaAtual,        // qual mesa (A/B) gerou esta partida
     data,
     valorPartida,
     valorBatida,
@@ -457,7 +465,7 @@ function finalizar(p, vencedorId) {
 function cancelarPartida(p) {
   state.partidas = state.partidas.filter(x => x.id !== p.id);
   DB.save(state);
-  if (typeof cloudClearLive === 'function') cloudClearLive();      // tira o jogo ao vivo da nuvem
+  if (typeof cloudClearLive === 'function') cloudClearLive(mesaDe(p)); // tira o jogo ao vivo da nuvem
   if (typeof cloudDeletePartida === 'function') cloudDeletePartida(p.id); // garante que não fique gravada
   currentScreen = 'home';
   render();
@@ -502,7 +510,7 @@ function persist(p) {
     if (p.finalizada) {
       // Encerrou: vai pro histórico compartilhado e sai do "ao vivo"
       cloudSetPartida(p);
-      cloudClearLive();
+      cloudClearLive(mesaDe(p));
     } else {
       // Em andamento: vira/atualiza o "jogo ao vivo" pra todos verem
       cloudSetLive(p);
@@ -591,13 +599,26 @@ function render() {
   if (currentScreen === 'history') return renderHistory();
   if (currentScreen === 'dinheiro') return renderDinheiro();
   if (currentScreen === 'players') return renderJogadores();
-  // Aba Jogo:
-  const local = currentPartida();
+  // Aba Jogo: escolhe pela mesa atual (A/B)
+  const local = partidaAtualMesa(mesaAtual);
+  const live = liveDocs[mesaAtual] || null;
   // Sou o dono se tenho jogo local E (não há ao vivo de ninguém OU o ao vivo é meu)
-  const souDono = local && (!liveDoc || liveDoc.ownerUid === myUid);
+  const souDono = local && (!live || live.ownerUid === myUid);
   if (souDono) return renderGame(local);                          // estou marcando
-  if (liveDoc) return renderLiveViewer(buildLivePartida(liveDoc)); // outro marca → assisto
-  return renderSetup();                                            // ninguém marcando → nova partida
+  if (live) return renderLiveViewer(buildLivePartida(live));      // outro marca → assisto
+  return renderSetup();                                           // ninguém marcando → nova partida
+}
+
+// Barra de troca de mesa (A/B) no topo da aba Jogo
+function renderMesaToggle(root) {
+  const bar = el('<div class="chips" style="margin-bottom:10px;justify-content:center;gap:10px"></div>');
+  MESAS.forEach(m => {
+    const jogando = !!liveDocs[m] || !!partidaAtualMesa(m);
+    const b = el(`<button class="chip ${m === mesaAtual ? 'on' : ''}">Mesa ${m}${jogando ? ' 🟢' : ''}</button>`);
+    b.addEventListener('click', () => { if (m !== mesaAtual) { setMesaAtual(m); render(); } });
+    bar.appendChild(b);
+  });
+  root.appendChild(bar);
 }
 
 /* ------------- Assistir ao vivo (aba Jogo, sem código) ------------------- */
@@ -605,11 +626,12 @@ function renderLiveViewer(p) {
   const root = appRoot();
   root.innerHTML = '';
   const ob = document.querySelector('.fab-bar'); if (ob) ob.remove();
+  renderMesaToggle(root);
 
   root.appendChild(el(`
     <div class="card" style="display:flex;align-items:center;gap:10px;background:#ffecec">
       <span class="live-dot"></span>
-      <span><b>AO VIVO</b> — a partida está sendo marcada. Você acompanha em tempo real.</span>
+      <span><b>AO VIVO (Mesa ${mesaAtual})</b> — a partida está sendo marcada. Você acompanha em tempo real.</span>
     </div>`));
 
   // "Quem é você?" (fica salvo) → card pessoal em destaque
@@ -757,6 +779,7 @@ function renderSetup() {
   const root = appRoot();
   root.innerHTML = '';
   const oldBar = document.querySelector('.fab-bar'); if (oldBar) oldBar.remove();
+  renderMesaToggle(root);
 
   // Mantém na seleção só ids que ainda existem no cadastro (preservando a ordem)
   setupSel = setupSel.filter(id => state.jogadores.some(j => j.id === id));
@@ -955,9 +978,11 @@ function statusOf(p, pl) {
 function renderGame(p) {
   const root = appRoot();
   root.innerHTML = '';
+  renderMesaToggle(root);
 
   const head = el(`
     <div class="game-head">
+      <div class="pill">Mesa <b>${mesaDe(p)}</b></div>
       <div class="pill">Data <b>${formatDatePT(p.data)}</b></div>
       <div class="pill">Partida <b>${money(p.valorPartida)}</b></div>
       <div class="pill">Batida/Pulga <b>${money(p.valorBatida)}</b></div>
@@ -1693,6 +1718,25 @@ function openAcordoDecisionModal(p, pl) {
 
 /* ------------------------------ Dinheiro --------------------------------- */
 let dinheiroPeriodo = 'dia'; // dia | semana | mes | ano | tudo
+let mesaFiltro = 'todas';    // 'todas' | 'A' | 'B' — filtro de mesa no Histórico/Dinheiro
+// Barra de filtro de mesa (Todas / Mesa A / Mesa B)
+function renderMesaFiltro(root) {
+  const opts = [['todas', 'Todas'], ['A', 'Mesa A'], ['B', 'Mesa B']];
+  const bar = el(`<div class="chips" style="margin-bottom:10px;gap:8px">
+    ${opts.map(([k, l]) => `<button class="chip ${mesaFiltro === k ? 'on' : ''}" data-mf="${k}">${l}</button>`).join('')}
+  </div>`);
+  bar.querySelectorAll('[data-mf]').forEach(b => b.addEventListener('click', () => { mesaFiltro = b.dataset.mf; render(); }));
+  root.appendChild(bar);
+}
+// Numera partidas por (dia + mesa): cada mesa tem sua sequência 1,2,3...
+function numeraPorDiaMesa(lista) {
+  const cont = {};
+  return lista.slice().sort((a, b) => (a.criadoEm || 0) - (b.criadoEm || 0)).map(p => {
+    const chave = mesaDe(p);
+    cont[chave] = (cont[chave] || 0) + 1;
+    return { p, n: cont[chave] };
+  });
+}
 let dinheiroSort = 'saldo';  // saldo | pulgas | batidas | vitorias | partidas
 let focusPartidaId = null;   // ao abrir o Histórico, rola/destaca esta partida
 let dinheiroDias = [];       // dias da semana marcados (vazio = a semana toda)
@@ -1724,12 +1768,13 @@ function renderDinheiro() {
   </div>`);
   sel.querySelectorAll('[data-p]').forEach(b => b.addEventListener('click', () => { dinheiroPeriodo = b.dataset.p; render(); }));
   root.appendChild(sel);
+  renderMesaFiltro(root);
 
   // ----- Sub-filtros (dependem do período escolhido) -----
   const hojeG = gameDayISO();
   const anoAtual = hojeG.slice(0, 4);
   const mesAtual = +hojeG.slice(5, 7) - 1;
-  const finalizadas = state.partidas.filter(p => p.finalizada);
+  const finalizadas = state.partidas.filter(p => p.finalizada && (mesaFiltro === 'todas' || mesaDe(p) === mesaFiltro));
   const mesesComJogo = [...new Set(finalizadas.filter(p => p.data.slice(0, 4) === anoAtual).map(p => +p.data.slice(5, 7) - 1))].sort((a, b) => a - b);
   const anosComJogo = [...new Set(finalizadas.map(p => p.data.slice(0, 4)))];
   if (!anosComJogo.includes(anoAtual)) anosComJogo.push(anoAtual);
@@ -1826,12 +1871,13 @@ function renderDinheiro() {
   const days = Object.keys(byDay).sort().reverse();
   days.forEach((day, di) => {
     const det = el(`<details class="hist-day" ${di === 0 ? 'open' : ''}><summary>${formatDatePT(day)} — ${byDay[day].length} partida(s)</summary></details>`);
-    // Numera cronologicamente (1ª, 2ª...) e mostra a mais recente em cima
-    const numeradas = byDay[day].slice().sort((a, b) => (a.criadoEm || 0) - (b.criadoEm || 0)).map((p, i) => ({ p, n: i + 1 }));
+    // Numera por dia+mesa (cada mesa tem sua sequência) e mostra a mais recente em cima
+    const numeradas = numeraPorDiaMesa(byDay[day]);
     numeradas.reverse().forEach(({ p, n }) => {
       const venc = p.players.find(x => x.id === p.vencedorId);
       const num = String(n).padStart(2, '0');
-      const card = el(`<div class="hist-partida clickable"><div class="h-title">${num}ª Partida · ${money(p.valorPartida)}/${money(p.valorBatida)} ${venc ? `<span class="badge">🏆 ${venc.nome}</span>` : ''} <span class="muted" style="float:right;font-weight:600">ver ›</span></div></div>`);
+      const badgeMesa = `<span class="badge" style="background:#ddd">Mesa ${mesaDe(p)}</span>`;
+      const card = el(`<div class="hist-partida clickable"><div class="h-title">${num}ª Partida ${badgeMesa} · ${money(p.valorPartida)}/${money(p.valorBatida)} ${venc ? `<span class="badge">🏆 ${venc.nome}</span>` : ''} <span class="muted" style="float:right;font-weight:600">ver ›</span></div></div>`);
       card.addEventListener('click', () => { focusPartidaId = p.id; currentScreen = 'history'; render(); });
       p.players.slice().sort((a, b) => saldoExibido(p, b.id) - saldoExibido(p, a.id)).forEach(pl => {
         const v = saldoExibido(p, pl.id); const cls = v >= 0 ? 'pos' : 'neg';
@@ -1855,13 +1901,16 @@ function renderHistory() {
     return;
   }
 
+  renderMesaFiltro(root);
+  const partidasFiltro = state.partidas.filter(p => mesaFiltro === 'todas' || mesaDe(p) === mesaFiltro);
+
   const byDay = {};
-  state.partidas.forEach(p => { (byDay[p.data] = byDay[p.data] || []).push(p); });
+  partidasFiltro.forEach(p => { (byDay[p.data] = byDay[p.data] || []).push(p); });
   const days = Object.keys(byDay).sort().reverse();
 
   // Ranking de pulgas (geral) — agrupado por jogador cadastrado
   const pulgaTotals = {};
-  state.partidas.forEach(p => p.players.forEach(pl => {
+  partidasFiltro.forEach(p => p.players.forEach(pl => {
     if (!pulgaTotals[pl.id]) pulgaTotals[pl.id] = { nome: nomeJogador(pl.id, pl.nome), v: 0 };
     pulgaTotals[pl.id].v += p.st.pulgas[pl.id] || 0;
   }));
@@ -1878,8 +1927,8 @@ function renderHistory() {
     const temFoco = focusPartidaId && byDay[day].some(p => p.id === focusPartidaId);
     const aberto = temFoco || (!focusPartidaId && day === days[0]);
     const det = el(`<details class="hist-day" ${aberto ? 'open' : ''}><summary>${formatDatePT(day)} — ${byDay[day].length} partida(s)</summary></details>`);
-    // Numera na ordem cronológica (1ª, 2ª...) e exibe a mais recente em cima
-    const numeradas = byDay[day].slice().sort((a, b) => (a.criadoEm || 0) - (b.criadoEm || 0)).map((p, i) => ({ p, n: i + 1 }));
+    // Numera por dia+mesa (cada mesa tem sua sequência) e exibe a mais recente em cima
+    const numeradas = numeraPorDiaMesa(byDay[day]);
     numeradas.reverse().forEach(({ p, n }) => det.appendChild(histCard(p, n)));
     root.appendChild(det);
   });
@@ -1914,7 +1963,7 @@ function histCard(p, numero) {
   const venc = p.players.find(pl => pl.id === p.vencedorId);
   const num = numero != null ? String(numero).padStart(2, '0') : '';
   const c = el(`<div class="hist-partida" data-pid="${p.id}">
-    <div class="h-title">${p.finalizada ? '✅' : '⏳'} ${num ? num + 'ª Partida' : 'Partida'} · ${money(p.valorPartida)}/${money(p.valorBatida)} — ${p.rounds.length} rodadas
+    <div class="h-title">${p.finalizada ? '✅' : '⏳'} ${num ? num + 'ª Partida' : 'Partida'} <span class="badge" style="background:#ddd">Mesa ${mesaDe(p)}</span> · ${money(p.valorPartida)}/${money(p.valorBatida)} — ${p.rounds.length} rodadas
     ${venc ? `<span class="badge">🏆 ${venc.nome}</span>` : ''}${p.zerou ? '<span class="badge" style="background:#ffd24d">🎯 no ZERO (dobrou)</span>' : ''}</div>
   </div>`);
   c.appendChild(buildBoard(p));
@@ -2022,26 +2071,26 @@ function openConfirmModal({ title, message, okText, onOk }) {
 /* ============= Histórico + cadastro compartilhados (nuvem) ============== */
 let cloudReady = false;
 let myUid = null;       // meu id anônimo
-let liveDoc = null;     // partida ao vivo compartilhada (live/atual) ou null
+let liveDocs = {};      // jogos ao vivo por mesa: { A: {...}, B: {...} }
 
 // Grava a partida em andamento como "jogo ao vivo" (todos veem; só o dono grava)
 function cloudSetLive(p) {
   if (!cloudReady || !myUid) return;
-  fbDB.collection('live').doc('atual').set({
-    ownerUid: myUid, partidaId: p.id, criadoEm: p.criadoEm || Date.now(),
+  fbDB.collection('live').doc(mesaDe(p)).set({
+    ownerUid: myUid, partidaId: p.id, criadoEm: p.criadoEm || Date.now(), mesa: mesaDe(p),
     data: p.data, valorPartida: p.valorPartida, valorBatida: p.valorBatida, limite: p.limite || 100,
     players: p.players.map(pl => ({ id: pl.id, nome: pl.nome })),
     events: JSON.parse(JSON.stringify(p.events || [])),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
   }).catch(e => console.warn('live set', e));
 }
-function cloudClearLive() {
+function cloudClearLive(m) {
   if (!cloudReady) return;
-  fbDB.collection('live').doc('atual').delete().catch(() => {});
+  fbDB.collection('live').doc(m || mesaAtual).delete().catch(() => {});
 }
 function buildLivePartida(d) {
   const p = {
-    id: d.partidaId || 'live', criadoEm: d.criadoEm || 0,
+    id: d.partidaId || 'live', criadoEm: d.criadoEm || 0, mesa: d.mesa || 'A',
     data: d.data, valorPartida: d.valorPartida, valorBatida: d.valorBatida,
     limite: d.limite || 100, players: d.players || [], events: d.events || [],
     st: {}, rounds: [], pendingPulgas: [], finalizada: false, vencedorId: null,
@@ -2050,10 +2099,11 @@ function buildLivePartida(d) {
   recompute(p);
   return p;
 }
-function onLiveSnapshot(snap) {
-  liveDoc = snap.exists ? snap.data() : null;
-  // Atualiza a tela Jogo quando NÃO sou eu marcando (sou espectador)
-  const souDono = !!currentPartida();
+function onLiveSnapshot(docs) {
+  liveDocs = {};
+  docs.forEach(d => { liveDocs[d.id] = d.data(); });
+  // Atualiza a tela Jogo quando NÃO sou eu marcando na mesa atual (sou espectador)
+  const souDono = !!partidaAtualMesa(mesaAtual);
   if (currentScreen === 'home' && !souDono) cloudMaybeRender(['home']);
 }
 
@@ -2074,7 +2124,7 @@ function cloudDeletePlayer(id) {
 }
 function partidaToCloud(p) {
   return {
-    id: p.id, criadoEm: p.criadoEm || Date.now(),
+    id: p.id, criadoEm: p.criadoEm || Date.now(), mesa: mesaDe(p),
     data: p.data, valorPartida: p.valorPartida, valorBatida: p.valorBatida,
     limite: p.limite || 100,
     players: p.players.map(pl => ({ id: pl.id, nome: pl.nome })),
@@ -2094,6 +2144,7 @@ function partidaFromCloud(doc) {
   const d = doc.data ? doc.data() : doc; // aceita snapshot do Firestore ou objeto puro
   const p = {
     id: doc.id, criadoEm: d.criadoEm || (d.updatedAt && d.updatedAt.toMillis ? d.updatedAt.toMillis() : 0),
+    mesa: d.mesa || 'A',
     data: d.data, valorPartida: d.valorPartida, valorBatida: d.valorBatida,
     limite: d.limite || 100, players: d.players || [], events: d.events || [],
     st: {}, rounds: [], pendingPulgas: [], finalizada: false, vencedorId: null,
@@ -2133,11 +2184,10 @@ async function initCloudSync() {
     // Escuta mudanças em tempo real
     fbDB.collection('roster').onSnapshot(s => mergeCloudRoster(s.docs), e => console.warn('roster snap', e));
     fbDB.collection('partidas').onSnapshot(s => mergeCloudPartidas(s.docs), e => console.warn('partidas snap', e));
-    // Jogo ao vivo compartilhado (todos veem automaticamente)
-    fbDB.collection('live').doc('atual').onSnapshot(onLiveSnapshot, e => console.warn('live snap', e));
-    // Se eu tenho um jogo local em andamento, retomo como dono (re-publico ao vivo)
-    const meu = currentPartida();
-    if (meu) cloudSetLive(meu);
+    // Jogos ao vivo por mesa (todos veem automaticamente)
+    fbDB.collection('live').onSnapshot(s => onLiveSnapshot(s.docs), e => console.warn('live snap', e));
+    // Se eu tenho jogos locais em andamento, retomo como dono (re-publico ao vivo)
+    state.partidas.filter(p => !p.finalizada && p.id !== 'viewer').forEach(cloudSetLive);
   } catch (e) { console.warn('sync init', e); }
 }
 
