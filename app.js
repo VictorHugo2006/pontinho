@@ -6,7 +6,7 @@
 'use strict';
 
 /* ----------------------------- Persistência ------------------------------ */
-const APP_VERSION = 'v55';
+const APP_VERSION = 'v56';
 const STORE_KEY = 'pontinho:v1';
 
 const DB = {
@@ -50,6 +50,22 @@ let mesaAtual = (() => { try { return localStorage.getItem('pontinho:mesa') || '
 function setMesaAtual(m) { mesaAtual = m; try { localStorage.setItem('pontinho:mesa', m); } catch (_) {} }
 const mesaDe = (p) => (p && p.mesa) || 'A';
 function partidaAtualMesa(m) { return state.partidas.find(p => !p.finalizada && mesaDe(p) === m) || null; }
+// Jogadores que já estão numa partida em andamento de OUTRA mesa → não podem entrar nesta
+function jogadoresEmOutraMesa(m) {
+  const ocup = {}; // id -> mesa
+  Object.values(liveDocs || {}).forEach(d => {
+    if (d && (d.mesa || 'A') !== m) (d.players || []).forEach(pl => { ocup[pl.id] = d.mesa || 'A'; });
+  });
+  state.partidas.filter(p => !p.finalizada && mesaDe(p) !== m).forEach(p => {
+    p.players.forEach(pl => { ocup[pl.id] = mesaDe(p); });
+  });
+  return ocup;
+}
+// A mesa já está sendo jogada por outra pessoa?
+function mesaOcupadaPorOutro(m) {
+  const d = liveDocs && liveDocs[m];
+  return !!(d && d.ownerUid && d.ownerUid !== myUid);
+}
 
 /* ------------------------------- Utils ----------------------------------- */
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -824,11 +840,15 @@ function renderSetup() {
       chips.appendChild(el('<p class="muted">Nenhum jogador cadastrado. Adicione abaixo ou na aba <b>Jogadores</b>.</p>'));
       return;
     }
+    const ocupados = jogadoresEmOutraMesa(mesaAtual); // já jogando na outra mesa
+    // Remove da seleção quem ficou ocupado na outra mesa
+    setupSel = setupSel.filter(id => !ocupados[id]);
     state.jogadores.slice().sort((a, b) => String(a.nome).localeCompare(b.nome, 'pt')).forEach(j => {
       const idx = setupSel.indexOf(j.id);
       const on = idx > -1;
-      const chip = el(`<button class="chip ${on ? 'on' : ''}">${on ? `<b class="ord">${idx + 1}</b>` : ''}${j.nome}</button>`);
-      chip.addEventListener('click', () => {
+      const bloq = ocupados[j.id];
+      const chip = el(`<button class="chip ${on ? 'on' : ''}" ${bloq ? 'disabled style="opacity:.4"' : ''}>${on ? `<b class="ord">${idx + 1}</b>` : ''}${j.nome}${bloq ? ` <span class="muted" style="font-size:11px">(Mesa ${bloq})</span>` : ''}</button>`);
+      if (!bloq) chip.addEventListener('click', () => {
         if (on) setupSel = setupSel.filter(x => x !== j.id);
         else {
           if (setupSel.length >= 8) { toast('Máximo de 8 jogadores'); return; }
@@ -863,6 +883,12 @@ function renderSetup() {
     const sel = setupSel.map(id => state.jogadores.find(j => j.id === id)).filter(Boolean);
     if (sel.length < 2) { toast('Selecione pelo menos 2 jogadores'); return; }
     if (!valorPartida || !valorBatida) { toast('Informe os valores'); return; }
+    // Não deixa iniciar se a mesa já está sendo jogada por outra pessoa
+    if (mesaOcupadaPorOutro(mesaAtual)) { toast(`A Mesa ${mesaAtual} já está sendo jogada`); render(); return; }
+    // Não deixa entrar quem já está jogando na outra mesa
+    const ocup = jogadoresEmOutraMesa(mesaAtual);
+    const conflito = sel.filter(j => ocup[j.id]);
+    if (conflito.length) { toast(`${conflito.map(j => j.nome).join(', ')} já está(ão) na Mesa ${ocup[conflito[0].id]}`); drawChips(); return; }
     const p = newPartida({ data, valorPartida, valorBatida, players: sel });
     state.partidas.push(p);
     persist(p); // já publica como "jogo ao vivo" pra todos
