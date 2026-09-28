@@ -6,7 +6,7 @@
 'use strict';
 
 /* ----------------------------- Persistência ------------------------------ */
-const APP_VERSION = 'v56';
+const APP_VERSION = 'v57';
 const STORE_KEY = 'pontinho:v1';
 
 const DB = {
@@ -171,9 +171,9 @@ function currentPartida() { return state.partidas.find(p => !p.finalizada) || nu
 
 /* ------------------------- Cadastro de jogadores ------------------------- */
 function addJogador(nome) {
-  nome = (nome || '').trim();
+  nome = (nome || '').trim().toUpperCase(); // padrão: caixa alta
   if (!nome) return null;
-  if (state.jogadores.some(j => j.nome.toLowerCase() === nome.toLowerCase())) {
+  if (state.jogadores.some(j => j.nome.toUpperCase() === nome)) {
     toast('Já existe um jogador com esse nome'); return null;
   }
   const j = { id: uid(), nome, criadoEm: Date.now() };
@@ -183,8 +183,11 @@ function addJogador(nome) {
   return j;
 }
 function renameJogador(id, nome) {
-  nome = (nome || '').trim();
+  nome = (nome || '').trim().toUpperCase(); // padrão: caixa alta
   if (!nome) return;
+  if (state.jogadores.some(x => x.id !== id && x.nome.toUpperCase() === nome)) {
+    toast('Já existe um jogador com esse nome'); return;
+  }
   const j = state.jogadores.find(x => x.id === id);
   if (j) { j.nome = nome; DB.save(state); cloudSetPlayer(j); }
 }
