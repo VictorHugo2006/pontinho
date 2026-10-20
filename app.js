@@ -6,7 +6,7 @@
 'use strict';
 
 /* ----------------------------- Persistência ------------------------------ */
-const APP_VERSION = 'v57';
+const APP_VERSION = 'v58';
 const STORE_KEY = 'pontinho:v1';
 
 const DB = {
@@ -336,10 +336,11 @@ function recompute(p) {
         foraIds: [...(ev.foraIds || [])], pontos: pontosDelta, voltas: [], estourou,
       });
     } else if (ev.type === 'entrar') {
-      // Entra com a maior pontuação e o maior nº de voltas entre os ativos
+      // Entra com a maior pontuação entre os ATIVOS e com o MAIOR nº de voltas (entradas)
+      // já atingido por qualquer jogador (inclusive quem já caiu fora) — mesmo nível de aposta.
       const act = activeIds();
       const novoP = act.length ? Math.max(...act.map(id => st.pontos[id])) : 0;
-      const novoV = act.length ? Math.max(...act.map(id => st.voltas[id])) : 0;
+      const novoV = Math.max(0, ...players.map(pl => st.voltas[pl.id] || 0));
       st.pontos[ev.playerId] = novoP;
       st.voltas[ev.playerId] = novoV;
       st.ativo[ev.playerId] = true;
@@ -1302,7 +1303,7 @@ function roundMark(p, r, playerId) {
 /* ------------------- Modal: adicionar jogador no meio -------------------- */
 function openAddPlayerModal(p) {
   const maxP = Math.max(0, ...activePlayers(p).map(pl => p.st.pontos[pl.id]));
-  const maxV = Math.max(0, ...activePlayers(p).map(pl => p.st.voltas[pl.id]));
+  const maxV = Math.max(0, ...p.players.map(pl => p.st.voltas[pl.id] || 0)); // maior nº de entradas já atingido
   const disponiveis = state.jogadores.filter(j => !p.players.some(pl => pl.id === j.id));
 
   const body = el(`
